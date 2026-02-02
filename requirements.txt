@@ -1,0 +1,8 @@
+mlx-whisper
+pyannote.audio
+python-dotenv
+pydub
+huggingface_hub
+torch
+torchvision
+torchaudio
