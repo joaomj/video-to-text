@@ -1,5 +1,7 @@
 # Transcribe-Diarize
 
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
+
 ## Start Here
 
 This tool converts your job interview recordings into readable transcripts with speaker labels, then optionally uses AI to give you feedback on how you did.
@@ -33,6 +35,11 @@ You'll get:
 - `interview-transcript.md` - Full transcript with speaker labels
 - `interview-analysis.md` - AI feedback on your performance (if you provided LLM_API_KEY)
 
+**Already have a transcript?** Run analysis only:
+```bash
+pdm run transcribe interview-transcript.md --analyze-only
+```
+
 ## Why This Exists
 
 Job interviews are high-stakes conversations where you want to improve. Most people:
@@ -57,7 +64,7 @@ System matches text segments to speakers by timing overlap
     ↓
 Pretty markdown file with timestamps and speaker labels
     ↓
-Gemini AI reads transcript and gives structured feedback
+Kimi K2.5 reads transcript and gives structured feedback
 ```
 
 ### The Components
@@ -67,7 +74,7 @@ Gemini AI reads transcript and gives structured feedback
 | Audio Extraction | FFmpeg | Industry standard, handles any video format |
 | Speaker ID | Pyannote 3.1 | Best open-source diarization model |
 | Transcription | MLX-Whisper | 3-5x faster than OpenAI on M-series Macs |
-| Analysis | Gemini 3 Flash | Fast, cheap ($0.50/1M tokens), high quality |
+| Analysis | Kimi K2.5 | Fast, excellent quality ($0.60/1M tokens) |
 
 ## Requirements
 
@@ -137,6 +144,9 @@ pdm run transcribe interview.mp4 --output ~/Documents/interviews/
 
 # Skip AI analysis (just get transcript)
 pdm run transcribe interview.mp4 --skip-analysis
+
+# Analyze an existing transcript file
+pdm run transcribe interview-transcript.md --analyze-only
 ```
 
 ## Usage Examples
@@ -371,7 +381,7 @@ If using OpenCode Zen LLM analysis:
 | 30 min interview | ~10,000 | $0.005 |
 | 1 hour interview | ~20,000 | $0.01 |
 
-Gemini 3 Flash is priced at $0.50/1M input tokens, $3/1M output tokens. Most interview analysis costs under a cent.
+Kimi K2.5 is priced at $0.60/1M input tokens, $3/3M output tokens. Most interview analysis costs 1-2 cents.
 
 ## Troubleshooting
 
@@ -391,6 +401,11 @@ The transcript will still be generated, but AI analysis will be skipped with a w
 - Close other applications
 - Use shorter video segments
 - Upgrade RAM if consistently hitting limits
+
+### "Weights only load failed" (PyTorch error)
+This was a compatibility issue between Pyannote 3.4 and PyTorch 2.6+. 
+**Fix**: Dependencies are now pinned to compatible versions (torch<2.6, huggingface-hub<1.0).
+Run `pdm sync` to ensure you have the correct versions.
 
 ## Supported Formats
 

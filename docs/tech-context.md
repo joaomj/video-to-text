@@ -21,7 +21,7 @@ Alignment: Match speakers to transcript segments by time overlap
     ↓
 Markdown Output: {stem}-transcript.md
     ↓
-LLM Analysis (optional): Gemini 3 Flash via OpenCode Zen API
+LLM Analysis (optional): Kimi K2.5 via OpenCode Zen API
     ↓
 Analysis Output: {stem}-analysis.md
 ```
@@ -52,13 +52,21 @@ Loaded via `pydantic-settings` with:
 ## CLI Interface
 
 ```bash
-pdm run transcribe <video> [options]
+pdm run transcribe <input> [options]
+
+Arguments:
+  input             Path to video file (MP4/MOV) or transcript (.md/.txt) if --analyze-only
 
 Options:
   --language, -l    Transcription language (default: en)
   --output, -o      Output directory (default: current working directory)
   --skip-analysis   Skip LLM analysis even if API key present
+  --analyze-only    Run only LLM analysis on existing transcript
 ```
+
+**Modes:**
+1. **Full Pipeline** (default): Video → Audio → Transcription → Optional Analysis
+2. **Analysis Only** (`--analyze-only`): Existing transcript → LLM Analysis
 
 ## Logging
 
@@ -71,6 +79,8 @@ Example:
 ```
 2026-02-04 17:23:45 [INFO] [a1b2c3d4] Extracting audio from interview.mp4...
 ```
+
+**Implementation Note**: Uses `RunIdFilter` on all logging handlers to inject `run_id` into every log record (including library logs). This ensures external library logs also include the correlation ID.
 
 ## Progress Bars and Timing
 
@@ -111,8 +121,8 @@ Each step shows:
 |---------|---------|
 | `mlx-whisper` | Apple's MLX-optimized Whisper (M-series Macs) |
 | `pyannote-audio` | Speaker diarization |
-| `torch`/`torchaudio` | ML framework + audio loading |
-| `huggingface-hub` | Model download + auth |
+| `torch<2.6`/`torchaudio<2.6` | ML framework + audio loading (pinned for compatibility) |
+| `huggingface-hub<1.0` | Model download + auth (maintains use_auth_token API) |
 | `pydantic-settings` | Type-safe .env handling |
 | `httpx` | HTTP client for Zen API |
 | `tqdm` | Progress bars for CLI |
@@ -141,18 +151,24 @@ State-of-the-art speaker diarization with:
 - MPS/CPU device support
 - HuggingFace integration
 
-### Why Gemini 3 Flash for Analysis?
+### Why Kimi K2.5 for Analysis?
 
-**Decision**: Use `gemini-3-flash` via OpenCode Zen
+**Decision**: Use `kimi-k2.5` via OpenCode Zen (changed from Gemini 3 Flash)
+
+**Reasons for Change**:
+- Better handling of long context (interview transcripts)
+- More detailed and structured feedback
+- Compatible with OpenAI-style API format (simpler integration)
 
 **Tradeoffs**:
 | Model | Cost/M tokens | Speed | Quality |
 |-------|--------------|-------|---------|
+| kimi-k2.5 | $0.60/$3.00 | Fast | Excellent |
 | gemini-3-flash | $0.50/$3.00 | Fast | Good |
 | claude-sonnet-4 | $3/$15 | Medium | Excellent |
 | gpt-5-nano | Free | Fastest | Basic |
 
-Flash offers best cost/performance ratio for interview feedback tasks.
+Kimi K2.5 offers best quality/performance ratio for interview analysis tasks.
 
 ### Why PDM over pip/venv?
 
@@ -194,11 +210,32 @@ jobs/
 4. **LLM API**: Optional - analysis skipped without key
 5. **File size**: Large videos may require significant RAM
 
+## Bug Fixes & Compatibility
+
+### Recent Fixes (2025-02-05)
+
+1. **PyTorch Compatibility**: Pinned to `torch<2.6` to avoid `weights_only` parameter issues with Pyannote 3.4
+2. **HuggingFace Hub**: Pinned to `huggingface-hub<1.0` to maintain `use_auth_token` compatibility
+3. **Hallucination Filter**: Fixed bug where `is_hallucination()` was comparing word string instead of count
+4. **Diarization API**: Fixed `AttributeError` - `pipeline()` returns `Annotation` directly, not a wrapper object
+
 ## Future Improvements
 
-- [x] Progress bars for long operations (implemented)
-- [x] Timing summary per step (implemented)
+- [x] Progress bars for long operations (v0.2.0)
+- [x] Timing summary per step (v0.2.0)
+- [x] Analysis-only mode for existing transcripts (v0.2.0)
+- [x] LLM analysis integration (v0.2.0)
 - [ ] Batch processing multiple videos
 - [ ] Configurable LLM model selection
 - [ ] Custom analysis prompts
 - [ ] Export formats (JSON, SRT)
+
+## Version History
+
+See [CHANGELOG.md](../CHANGELOG.md) for detailed release notes.
+
+| Version | Date | Key Changes |
+|---------|------|-------------|
+| 0.2.0 | 2026-02-05 | LLM analysis, progress bars, timing summary |
+| 0.1.1 | 2026-02-04 | Structured logging, PDM migration, expanded docs |
+| 0.1.0 | 2026-02-02 | Initial release - transcription and diarization |
