@@ -52,6 +52,7 @@ logs/
 
 # Transcription outputs (keep examples only)
 *-transcript.md
+*-analysis.md
 *.wav
 *.mp3
 
@@ -64,3 +65,6 @@ models/
 test_*
 *_test.*
 check_*.py
+
+# PDM
+.pdm-python

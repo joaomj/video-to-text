@@ -6,13 +6,14 @@ requires-python = ">=3.11"
 dependencies = [
     "mlx-whisper",
     "pyannote-audio",
-    "torch",
-    "torchaudio",
-    "huggingface-hub",
+    "torch<2.6",
+    "torchaudio<2.6",
+    "huggingface-hub<1.0",
     "pydantic-settings>=2.0",
     "httpx>=0.27",
     "python-dotenv",
     "tqdm>=4.66",
+    "pydantic>=2.12.5",
 ]
 
 [project.scripts]

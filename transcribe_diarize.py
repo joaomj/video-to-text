@@ -12,6 +12,7 @@ import uuid
 import time
 from pathlib import Path
 from datetime import timedelta
+
 from typing import Any
 from contextlib import contextmanager
 from collections.abc import Generator
@@ -19,8 +20,8 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from tqdm import tqdm
 import mlx_whisper
-from pyannote.audio import Pipeline
 import torch
+from pyannote.audio import Pipeline
 from huggingface_hub import login
 import httpx
 import torchaudio
@@ -29,10 +30,10 @@ RUN_ID = uuid.uuid4().hex[:8]
 STEP_TIMES: dict[str, float] = {}
 
 
-class RunIdAdapter(logging.LoggerAdapter):
-    def process(self, msg: str, kwargs) -> tuple[str, Any]:
-        kwargs.setdefault("extra", {})["run_id"] = RUN_ID
-        return msg, kwargs
+class RunIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.run_id = RUN_ID  # type: ignore[attr-defined]
+        return True
 
 
 logging.basicConfig(
@@ -40,7 +41,9 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] [%(run_id)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = RunIdAdapter(logging.getLogger(__name__), {"run_id": RUN_ID})
+for handler in logging.root.handlers:
+    handler.addFilter(RunIdFilter())
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -79,7 +82,7 @@ def is_hallucination(text: str) -> bool:
     if len(text_lower) < 3:
         return True
     words = text_lower.split()
-    if len(words) >= 4 and max(set(words), key=words.count) / len(words) > 0.6:
+    if len(words) >= 4 and words.count(max(set(words), key=words.count)) / len(words) > 0.6:
         return True
     patterns = [
         "thank you. thank you.", "thank you thank you", "openness openness",
@@ -122,20 +125,23 @@ Transcript:
         try:
             with tqdm(total=1, desc="Sending to LLM", unit="request") as pbar:
                 response = httpx.post(
-                    "https://opencode.ai/zen/v1/models/gemini-3-flash:generateContent",
+                    "https://opencode.ai/zen/v1/chat/completions",
                     headers={"Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}"},
-                    json={"contents": [{"parts": [{"text": prompt}]}]},
+                    json={
+                        "model": "kimi-k2.5",
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
                     timeout=120.0,
                 )
                 response.raise_for_status()
                 pbar.update(1)
 
-            analysis = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            analysis = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
             if not analysis:
                 logger.error("Empty response from LLM API")
                 return None
 
-            analysis_path = transcript_path.with_suffix("-analysis.md")
+            analysis_path = transcript_path.with_stem(transcript_path.stem + "-analysis")
             analysis_path.write_text(f"# Interview Analysis\n\n{analysis}\n")
             logger.info(f"Analysis saved to {analysis_path}")
             return analysis_path
@@ -152,7 +158,7 @@ def process_transcription(
 
     with timed_step("Speaker Diarization"):
         logger.info("Loading Pyannote pipeline...")
-        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", token=hf_token)
+        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
         if pipeline is None:
             logger.error("Failed to load Pyannote pipeline")
             sys.exit(1)
@@ -171,12 +177,12 @@ def process_transcription(
             pbar.update(1)
             audio_data: dict[str, Any] = {"waveform": waveform, "sample_rate": sample_rate}
             pbar.update(1)
-            diarization = pipeline(audio_data).speaker_diarization
+            diarization = pipeline(audio_data)
             pbar.update(1)
 
     with timed_step("Speech Transcription"):
         result = mlx_whisper.transcribe(
-            audio_path,
+            str(audio_path),
             path_or_hf_repo="mlx-community/whisper-large-v3-mlx",
             word_timestamps=True,
             language=language,
@@ -242,12 +248,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Transcribe and diarize video files (MP4/MOV).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Examples:\n  pdm run transcribe video.mp4\n  pdm run transcribe interview.mov --language pt\n  pdm run transcribe video.mp4 --output /path\n  pdm run transcribe video.mp4 --skip-analysis",
+        epilog="Examples:\n  pdm run transcribe video.mp4\n  pdm run transcribe interview.mov --language pt\n  pdm run transcribe video.mp4 --output /path\n  pdm run transcribe video.mp4 --skip-analysis\n  pdm run transcribe --analyze-only transcript.md",
     )
-    parser.add_argument("input", help="Path to video file (MP4 or MOV)")
+    parser.add_argument("input", help="Path to video file (MP4/MOV) or transcript (.md) if --analyze-only")
     parser.add_argument("--language", default="en", help='Language code (default: en)')
     parser.add_argument("--output", "-o", type=Path, help="Output directory (default: current directory)")
     parser.add_argument("--skip-analysis", action="store_true", help="Skip LLM analysis")
+    parser.add_argument("--analyze-only", action="store_true", help="Run only LLM analysis on existing transcript")
 
     args = parser.parse_args()
     input_path = Path(args.input)
@@ -257,6 +264,24 @@ def main():
         logger.error(f"Input file not found: {input_path}")
         sys.exit(1)
 
+    settings = Settings()
+
+    if args.analyze_only:
+        # Run analysis only mode
+        if input_path.suffix not in {".md", ".txt"}:
+            logger.error(f"Invalid file type for analysis: {input_path.suffix}. Use .md or .txt")
+            sys.exit(1)
+
+        logger.info(f"Running analysis only on {input_path.name}")
+        analyze_transcript(input_path, settings)
+
+        total_elapsed = time.perf_counter() - script_start
+        STEP_TIMES["Script Total"] = total_elapsed
+        print_timing_summary()
+        logger.info(f"Analysis complete!")
+        return
+
+    # Full pipeline mode
     valid_extensions = {".mp4", ".mov", ".MP4", ".MOV"}
     if input_path.suffix not in valid_extensions:
         logger.error(f"Invalid file type: {input_path.suffix}. Supported: {valid_extensions}")
@@ -265,7 +290,6 @@ def main():
     output_dir = args.output if args.output else Path.cwd()
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{input_path.stem}-transcript.md"
-    settings = Settings()
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_audio_path = Path(temp_dir) / "extracted_audio.wav"
