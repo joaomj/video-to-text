@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **LLM Provider**: Switched runtime analysis endpoint to Gemini OpenAI-compatible chat completions API
+- **Default Analysis Model**: Set default model to `gemini-3-flash-preview`
+- **Config Compatibility**: Added `GEMINI_API_KEY` as preferred key with `LLM_API_KEY` fallback support
+- **CLI Aliases**: Added `transcript-diarize` script alias alongside existing `transcribe`
+
 ## [0.2.0] - 2026-02-05
 
 ### Added
