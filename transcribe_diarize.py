@@ -29,6 +29,38 @@ import torchaudio
 RUN_ID = uuid.uuid4().hex[:8]
 STEP_TIMES: dict[str, float] = {}
 
+MEETING_PROMPTS: dict[str, dict[str, str]] = {
+    "interview": {
+        "initial_prompt": "Job interview conversation.",
+        "analysis_prompt": """Analyze this job interview transcript:
+
+1. Strengths: What did the candidate do well?
+2. Areas for Improvement: Where could they improve?
+3. Communication Style: Clarity, confidence, professionalism
+4. Technical Answers: Depth and accuracy assessment
+5. Actionable Recommendations: Tips for future interviews
+
+Transcript:
+{transcript}""",
+        "transcript_header": "Job Interview Transcript",
+        "analysis_header": "Interview Analysis",
+    },
+    "generic": {
+        "initial_prompt": "Professional meeting conversation.",
+        "analysis_prompt": """Analyze this meeting transcript:
+
+1. Key Topics: Main subjects discussed
+2. Decisions Made: Any conclusions or agreements
+3. Action Items: Tasks or follow-ups assigned
+4. Open Questions: Unresolved items needing attention
+
+Transcript:
+{transcript}""",
+        "transcript_header": "Meeting Transcript",
+        "analysis_header": "Meeting Analysis",
+    },
+}
+
 
 class RunIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -49,7 +81,12 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
     hf_access_token: SecretStr
+    gemini_api_key: SecretStr | None = None
     llm_api_key: SecretStr | None = None
+    llm_model: str = "gemini-3-flash-preview"
+
+    def resolved_llm_api_key(self) -> SecretStr | None:
+        return self.gemini_api_key or self.llm_api_key
 
 
 @contextmanager
@@ -105,30 +142,33 @@ def extract_audio(video_path: Path, output_audio_path: Path) -> None:
         raise RuntimeError("ffmpeg not found. Install with: brew install ffmpeg")
 
 
-def analyze_transcript(transcript_path: Path, settings: Settings) -> Path | None:
-    if settings.llm_api_key is None:
-        logger.warning("LLM_API_KEY not set, skipping analysis")
+def analyze_transcript(
+    transcript_path: Path,
+    settings: Settings,
+    meeting_type: str = "generic",
+    prompt_file: Path | None = None,
+) -> Path | None:
+    llm_api_key = settings.resolved_llm_api_key()
+    if llm_api_key is None:
+        logger.warning("GEMINI_API_KEY or LLM_API_KEY not set, skipping analysis")
         return None
 
     with timed_step("LLM Analysis"):
-        prompt = f"""Analyze this job interview transcript:
-
-1. Strengths: What did the candidate do well?
-2. Areas for Improvement: Where could they improve?
-3. Communication Style: Clarity, confidence, professionalism
-4. Technical Answers: Depth and accuracy assessment
-5. Actionable Recommendations: Tips for future interviews
-
-Transcript:
-{transcript_path.read_text()}"""
+        if prompt_file is not None:
+            prompt = prompt_file.read_text().replace("{transcript}", transcript_path.read_text())
+        else:
+            template = MEETING_PROMPTS.get(meeting_type, MEETING_PROMPTS["generic"])
+            prompt = template["analysis_prompt"].replace(
+                "{transcript}", transcript_path.read_text()
+            )
 
         try:
             with tqdm(total=1, desc="Sending to LLM", unit="request") as pbar:
                 response = httpx.post(
-                    "https://opencode.ai/zen/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}"},
+                    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                    headers={"Authorization": f"Bearer {llm_api_key.get_secret_value()}"},
                     json={
-                        "model": "kimi-k2.5",
+                        "model": settings.llm_model,
                         "messages": [{"role": "user", "content": prompt}],
                     },
                     timeout=120.0,
@@ -141,8 +181,9 @@ Transcript:
                 logger.error("Empty response from LLM API")
                 return None
 
+            template = MEETING_PROMPTS.get(meeting_type, MEETING_PROMPTS["generic"])
             analysis_path = transcript_path.with_stem(transcript_path.stem + "-analysis")
-            analysis_path.write_text(f"# Interview Analysis\n\n{analysis}\n")
+            analysis_path.write_text(f"# {template['analysis_header']}\n\n{analysis}\n")
             logger.info(f"Analysis saved to {analysis_path}")
             return analysis_path
         except Exception as e:
@@ -151,10 +192,16 @@ Transcript:
 
 
 def process_transcription(
-    audio_path: Path, output_path: Path, language: str, settings: Settings
+    audio_path: Path,
+    output_path: Path,
+    language: str,
+    settings: Settings,
+    meeting_type: str = "generic",
 ) -> None:
     hf_token = settings.hf_access_token.get_secret_value()
     login(token=hf_token)
+
+    template = MEETING_PROMPTS.get(meeting_type, MEETING_PROMPTS["generic"])
 
     with timed_step("Speaker Diarization"):
         logger.info("Loading Pyannote pipeline...")
@@ -191,8 +238,8 @@ def process_transcription(
             logprob_threshold=-0.8,
             no_speech_threshold=0.5,
             hallucination_silence_threshold=1.0,
-            initial_prompt="Job interview conversation.",
-            verbose=True,  # Shows MLX-Whisper progress
+            initial_prompt=template["initial_prompt"],
+            verbose=True,
         )
 
     with timed_step("Speaker Alignment"):
@@ -212,11 +259,13 @@ def process_transcription(
                 if overlap > max_duration:
                     max_duration, speaker = overlap, str(s)
 
-            transcript_segments.append({"start": start, "end": end, "speaker": speaker, "text": text})
+            transcript_segments.append(
+                {"start": start, "end": end, "speaker": speaker, "text": text}
+            )
 
     with timed_step("Writing Output"):
         with open(output_path, "w") as f:
-            f.write(f"# Job Interview Transcript: {audio_path.stem}\n\n")
+            f.write(f"# {template['transcript_header']}: {audio_path.stem}\n\n")
             last_speaker = None
             for seg in transcript_segments:
                 timestamp = format_timestamp(seg["start"])
@@ -248,13 +297,42 @@ def main():
     parser = argparse.ArgumentParser(
         description="Transcribe and diarize video files (MP4/MOV).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Examples:\n  pdm run transcribe video.mp4\n  pdm run transcribe interview.mov --language pt\n  pdm run transcribe video.mp4 --output /path\n  pdm run transcribe video.mp4 --skip-analysis\n  pdm run transcribe --analyze-only transcript.md",
+        epilog=(
+            "Examples:\n"
+            "  pdm run transcribe video.mp4\n"
+            "  pdm run transcribe interview.mov --type interview --language pt\n"
+            "  pdm run transcribe video.mp4 --output /path\n"
+            "  pdm run transcribe video.mp4 --skip-analysis\n"
+            "  pdm run transcribe --analyze-only transcript.md --type generic\n"
+            "  pdm run transcribe meeting.mp4 --prompt-file custom_prompt.md"
+        ),
     )
-    parser.add_argument("input", help="Path to video file (MP4/MOV) or transcript (.md) if --analyze-only")
-    parser.add_argument("--language", default="en", help='Language code (default: en)')
-    parser.add_argument("--output", "-o", type=Path, help="Output directory (default: current directory)")
-    parser.add_argument("--skip-analysis", action="store_true", help="Skip LLM analysis")
-    parser.add_argument("--analyze-only", action="store_true", help="Run only LLM analysis on existing transcript")
+    parser.add_argument(
+        "input", help="Path to video file (MP4/MOV) or transcript (.md) if --analyze-only"
+    )
+    parser.add_argument(
+        "--language", default="en", help="Language code (default: en)"
+    )
+    parser.add_argument(
+        "--output", "-o", type=Path, help="Output directory (default: current directory)"
+    )
+    parser.add_argument(
+        "--type", "-t",
+        choices=["interview", "generic"],
+        default="generic",
+        help="Meeting type (default: generic)",
+    )
+    parser.add_argument(
+        "--prompt-file", "-p", type=Path, help="Custom analysis prompt file (markdown)"
+    )
+    parser.add_argument(
+        "--skip-analysis", action="store_true", help="Skip LLM analysis"
+    )
+    parser.add_argument(
+        "--analyze-only",
+        action="store_true",
+        help="Run only LLM analysis on existing transcript",
+    )
 
     args = parser.parse_args()
     input_path = Path(args.input)
@@ -267,18 +345,24 @@ def main():
     settings = Settings()
 
     if args.analyze_only:
-        # Run analysis only mode
         if input_path.suffix not in {".md", ".txt"}:
-            logger.error(f"Invalid file type for analysis: {input_path.suffix}. Use .md or .txt")
+            logger.error(
+                f"Invalid file type for analysis: {input_path.suffix}. Use .md or .txt"
+            )
             sys.exit(1)
 
         logger.info(f"Running analysis only on {input_path.name}")
-        analyze_transcript(input_path, settings)
+        analyze_transcript(
+            input_path,
+            settings,
+            meeting_type=args.type,
+            prompt_file=args.prompt_file,
+        )
 
         total_elapsed = time.perf_counter() - script_start
         STEP_TIMES["Script Total"] = total_elapsed
         print_timing_summary()
-        logger.info(f"Analysis complete!")
+        logger.info("Analysis complete!")
         return
 
     # Full pipeline mode
@@ -299,10 +383,21 @@ def main():
             extract_audio(input_path, temp_audio_path)
             logger.info("Audio extracted successfully")
 
-        process_transcription(temp_audio_path, output_path, args.language, settings)
+        process_transcription(
+            temp_audio_path,
+            output_path,
+            args.language,
+            settings,
+            meeting_type=args.type,
+        )
 
     if not args.skip_analysis:
-        analyze_transcript(output_path, settings)
+        analyze_transcript(
+            output_path,
+            settings,
+            meeting_type=args.type,
+            prompt_file=args.prompt_file,
+        )
 
     total_elapsed = time.perf_counter() - script_start
     STEP_TIMES["Script Total"] = total_elapsed
