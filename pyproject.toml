@@ -1,6 +1,6 @@
 [project]
 name = "transcribe-diarize"
-version = "0.1.0"
+version = "0.3.0"
 description = "Transcribe and diarize video files (MP4/MOV) with LLM analysis"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,12 +18,14 @@ dependencies = [
 
 [project.scripts]
 transcribe = "transcribe_diarize:main"
+transcript-diarize = "transcribe_diarize:main"
 
 [tool.pdm]
 distribution = false
 
 [tool.pdm.scripts]
 transcribe = "python transcribe_diarize.py"
+transcript-diarize = "python transcribe_diarize.py"
 
 [tool.ruff]
 line-length = 100
@@ -58,3 +60,8 @@ max-complexity = 15
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.6",
+]
