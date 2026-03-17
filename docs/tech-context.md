@@ -2,7 +2,7 @@
 
 ## Overview
 
-A CLI tool for transcribing and diarizing job interview videos (MP4/MOV format). Extracts audio, identifies speakers, transcribes speech using MLX-Whisper, and optionally analyzes transcripts with LLM for interview feedback.
+A CLI tool for transcribing and diarizing video recordings (MP4/MOV format). Extracts audio, identifies speakers, transcribes speech using MLX-Whisper, and optionally analyzes transcripts with LLM. Supports multiple meeting types: interviews, career discussions, ML meetings, and generic professional meetings.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ Alignment: Match speakers to transcript segments by time overlap
     ↓
 Markdown Output: {stem}-transcript.md
     ↓
-LLM Analysis (optional): Kimi K2.5 via OpenCode Zen API
+LLM Analysis (optional): Gemini 3 Flash Preview via Gemini OpenAI-compatible API
     ↓
 Analysis Output: {stem}-analysis.md
 ```
@@ -31,9 +31,39 @@ Analysis Output: {stem}-analysis.md
 | Component | Purpose | Input | Output |
 |-----------|---------|-------|--------|
 | `extract_audio()` | FFmpeg wrapper | Video path | WAV file |
-| `process_transcription()` | Core pipeline | Audio path, language | Markdown transcript |
-| `analyze_transcript()` | LLM feedback | Transcript path | Analysis markdown |
+| `process_transcription()` | Core pipeline | Audio path, language, meeting_type | Markdown transcript |
+| `analyze_transcript()` | LLM feedback | Transcript path, meeting_type, prompt_file | Analysis markdown |
 | `is_hallucination()` | Filter Whisper noise | Text segment | Boolean |
+
+## Meeting Type Templates
+
+The `MEETING_PROMPTS` constant defines templates for each meeting type:
+
+```python
+MEETING_PROMPTS = {
+    "interview": {
+        "initial_prompt": "Job interview conversation.",
+        "analysis_prompt": "...",
+        "transcript_header": "Job Interview Transcript",
+        "analysis_header": "Interview Analysis",
+    },
+    "generic": {
+        "initial_prompt": "Professional meeting conversation.",
+        "analysis_prompt": "...",
+        "transcript_header": "Meeting Transcript",
+        "analysis_header": "Meeting Analysis",
+    },
+}
+```
+
+| Template Field | Purpose |
+|----------------|---------|
+| `initial_prompt` | Whisper context hint for better transcription |
+| `analysis_prompt` | LLM prompt for structured analysis |
+| `transcript_header` | Markdown heading for transcript file |
+| `analysis_header` | Markdown heading for analysis file |
+
+**Custom Prompts**: Use `--prompt-file` to override the analysis prompt with a markdown file. The file must contain `{transcript}` placeholder.
 
 ## Configuration
 
@@ -41,7 +71,8 @@ Analysis Output: {stem}-analysis.md
 
 ```bash
 HF_ACCESS_TOKEN=hf_xxx  # Required: HuggingFace for Pyannote diarization
-LLM_API_KEY=xxx         # Optional: OpenCode Zen for analysis
+GEMINI_API_KEY=xxx      # Optional: Preferred Gemini key for analysis
+LLM_API_KEY=xxx         # Optional: Backward-compatible fallback key
 ```
 
 Loaded via `pydantic-settings` with:
@@ -60,6 +91,8 @@ Arguments:
 Options:
   --language, -l    Transcription language (default: en)
   --output, -o      Output directory (default: current working directory)
+  --type, -t        Meeting type: interview or generic (default: generic)
+  --prompt-file, -p Custom analysis prompt file (markdown)
   --skip-analysis   Skip LLM analysis even if API key present
   --analyze-only    Run only LLM analysis on existing transcript
 ```
@@ -67,6 +100,12 @@ Options:
 **Modes:**
 1. **Full Pipeline** (default): Video → Audio → Transcription → Optional Analysis
 2. **Analysis Only** (`--analyze-only`): Existing transcript → LLM Analysis
+
+**Meeting Types:**
+- `interview`: Job interview analysis (strengths, improvements, communication, technical answers)
+- `generic`: General meeting analysis (key topics, decisions, action items, open questions)
+
+**Breaking Change**: Default type changed from `interview` to `generic`. Use `--type interview` for interview-specific analysis.
 
 ## Logging
 
@@ -151,24 +190,24 @@ State-of-the-art speaker diarization with:
 - MPS/CPU device support
 - HuggingFace integration
 
-### Why Kimi K2.5 for Analysis?
+### Why Gemini 3 Flash Preview for Analysis?
 
-**Decision**: Use `kimi-k2.5` via OpenCode Zen (changed from Gemini 3 Flash)
+**Decision**: Use `gemini-3-flash-preview` as the default analysis model.
 
 **Reasons for Change**:
-- Better handling of long context (interview transcripts)
-- More detailed and structured feedback
-- Compatible with OpenAI-style API format (simpler integration)
+- Current active key is Gemini-based
+- Fast response for long interview transcripts
+- Compatible with OpenAI-style chat completions endpoint used by this script
 
 **Tradeoffs**:
-| Model | Cost/M tokens | Speed | Quality |
-|-------|--------------|-------|---------|
-| kimi-k2.5 | $0.60/$3.00 | Fast | Excellent |
-| gemini-3-flash | $0.50/$3.00 | Fast | Good |
-| claude-sonnet-4 | $3/$15 | Medium | Excellent |
-| gpt-5-nano | Free | Fastest | Basic |
+| Option | Pros | Cons |
+|-------|------|------|
+| Gemini 3 Flash Preview (current) | Fast, low cost, good quality | Output depth may vary on complex prompts |
+| Higher-end LLMs | Potentially richer analysis | Higher cost and/or slower latency |
 
-Kimi K2.5 offers best quality/performance ratio for interview analysis tasks.
+**Fallback Strategy**:
+- Prefer `GEMINI_API_KEY`
+- Fallback to `LLM_API_KEY` for backward compatibility
 
 ### Why PDM over pip/venv?
 
@@ -194,7 +233,7 @@ Kimi K2.5 offers best quality/performance ratio for interview analysis tasks.
 
 ```
 jobs/
-├── transcribe_diarize.py   # Main script (274 lines)
+├── transcribe_diarize.py   # Main script
 ├── pyproject.toml          # PDM + dependencies
 ├── pdm.lock               # Locked dependency versions
 ├── .env                   # Secrets (user-managed, git-ignored)
@@ -225,9 +264,10 @@ jobs/
 - [x] Timing summary per step (v0.2.0)
 - [x] Analysis-only mode for existing transcripts (v0.2.0)
 - [x] LLM analysis integration (v0.2.0)
+- [x] Meeting type templates (v0.3.0)
+- [x] Custom analysis prompts (v0.3.0)
 - [ ] Batch processing multiple videos
 - [ ] Configurable LLM model selection
-- [ ] Custom analysis prompts
 - [ ] Export formats (JSON, SRT)
 
 ## Version History
@@ -236,6 +276,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for detailed release notes.
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| 0.3.0 | 2026-03-16 | Meeting-agnostic: --type flag, --prompt-file, generic default |
 | 0.2.0 | 2026-02-05 | LLM analysis, progress bars, timing summary |
 | 0.1.1 | 2026-02-04 | Structured logging, PDM migration, expanded docs |
 | 0.1.0 | 2026-02-02 | Initial release - transcription and diarization |

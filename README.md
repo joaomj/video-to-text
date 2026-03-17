@@ -1,21 +1,32 @@
 # Transcribe-Diarize
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
 
 ## Start Here
 
-This tool converts your job interview recordings into readable transcripts with speaker labels, then optionally uses AI to give you feedback on how you did.
+This tool converts your video recordings into readable transcripts with speaker labels, then optionally uses AI to analyze the content. Works with interviews, career discussions, team meetings, and any professional conversation.
 
 ### What It Does
 
-Imagine you record a job interview on your phone. This tool:
+Imagine you record a meeting on your phone. This tool:
 
 1. **Pulls out the audio** from your video file (MP4/MOV)
-2. **Identifies who is speaking** when (interviewer vs. you)
+2. **Identifies who is speaking** when (different speakers)
 3. **Transcribes every word** with timestamps and shows progress bars
 4. **Writes it all** to a clean markdown file in your current directory
 5. **Shows timing** for each step so you know what's taking time
-6. **Optionally analyzes** the interview with AI for feedback
+6. **Optionally analyzes** the meeting content with AI for insights
+
+### Meeting Types
+
+| Type | Use Case | Analysis Focus |
+|------|----------|----------------|
+| `generic` (default) | Team meetings, discussions | Key topics, decisions, action items, open questions |
+| `interview` | Job interviews | Strengths, improvements, communication, technical answers |
+
+### Custom Prompts
+
+Use `--prompt-file` to provide your own analysis template (markdown file with `{transcript}` placeholder).
 
 ### Quick Start
 
@@ -25,29 +36,33 @@ pdm install
 
 # 2. Add your API keys to .env file
 echo "HF_ACCESS_TOKEN=your_huggingface_token" > .env
-echo "LLM_API_KEY=your_opencode_zen_key" >> .env
+echo "GEMINI_API_KEY=your_gemini_key" >> .env
 
-# 3. Run it
-pdm run transcribe interview.mp4
+# 3. Run it (generic meeting type by default)
+pdm run transcribe meeting.mp4
+
+# For job interviews
+pdm run transcribe interview.mp4 --type interview
 ```
 
 You'll get:
-- `interview-transcript.md` - Full transcript with speaker labels
-- `interview-analysis.md` - AI feedback on your performance (if you provided LLM_API_KEY)
+- `meeting-transcript.md` - Full transcript with speaker labels
+- `meeting-analysis.md` - AI analysis (if API key provided)
 
 **Already have a transcript?** Run analysis only:
 ```bash
-pdm run transcribe interview-transcript.md --analyze-only
+pdm run transcribe meeting-transcript.md --analyze-only
+pdm run transcribe interview-transcript.md --analyze-only --type interview
 ```
 
 ## Why This Exists
 
-Job interviews are high-stakes conversations where you want to improve. Most people:
-- Forget exactly what they said
-- Can't objectively assess their performance
-- Miss subtle communication patterns
+Professional recordings are valuable but underutilized. Most people:
+- Forget exactly what was said
+- Can't objectively assess the conversation
+- Miss subtle patterns and action items
 
-This tool gives you an objective record and AI-powered feedback so you can iterate and improve.
+This tool gives you an objective record and AI-powered analysis so you can review, learn, and follow up.
 
 ## How It Works (Architecture)
 
@@ -64,7 +79,7 @@ System matches text segments to speakers by timing overlap
     ↓
 Pretty markdown file with timestamps and speaker labels
     ↓
-Kimi K2.5 reads transcript and gives structured feedback
+Gemini 3 Flash Preview reads transcript and gives structured feedback
 ```
 
 ### The Components
@@ -74,7 +89,7 @@ Kimi K2.5 reads transcript and gives structured feedback
 | Audio Extraction | FFmpeg | Industry standard, handles any video format |
 | Speaker ID | Pyannote 3.1 | Best open-source diarization model |
 | Transcription | MLX-Whisper | 3-5x faster than OpenAI on M-series Macs |
-| Analysis | Kimi K2.5 | Fast, excellent quality ($0.60/1M tokens) |
+| Analysis | Gemini 3 Flash Preview | Fast, low-cost, good quality |
 
 ## Requirements
 
@@ -110,10 +125,10 @@ Models are cached in `~/.cache/` and reused across runs.
 2. Create a token with "read" access
 3. Accept the user agreement at https://huggingface.co/pyannote/speaker-diarization-3.1
 
-**OpenCode Zen Key** (optional, for AI analysis):
-1. Go to https://opencode.ai/auth
-2. Sign in and add billing
-3. Copy your API key from the dashboard
+**Gemini API Key** (optional, for AI analysis):
+1. Go to https://aistudio.google.com/apikey
+2. Create an API key
+3. Copy your API key
 
 ### 2. Configure Environment
 
@@ -121,7 +136,7 @@ Models are cached in `~/.cache/` and reused across runs.
 # Create .env file
 cat > .env << 'EOF'
 HF_ACCESS_TOKEN=hf_your_token_here
-LLM_API_KEY=oc_your_key_here
+GEMINI_API_KEY=your_gemini_key_here
 EOF
 ```
 
@@ -168,14 +183,42 @@ pdm run transcribe /path/to/video.mp4 --language pt
 ### All Options
 
 ```bash
-# English interview with custom output
-pdm run transcribe interviews/candidate-john.mp4 --output ~/Documents/
+# Generic meeting with custom output directory
+pdm run transcribe meeting.mp4 --output ~/Documents/meetings/
 
-# Portuguese meeting, skip analysis
-pdm run transcribe meetings/team-sync.mov --language pt --skip-analysis
+# Job interview
+pdm run transcribe interview.mp4 --type interview
 
-# Spanish presentation
-pdm run transcribe presentations/quarterly-review.mp4 --language es
+# Career discussion with custom analysis
+pdm run transcribe career-talk.mp4 --type generic --prompt-file my-prompt.md
+
+# Meeting in another language
+pdm run transcribe reunion.mp4 --language es
+
+# Skip AI analysis (just get transcript)
+pdm run transcribe meeting.mp4 --skip-analysis
+```
+
+### Custom Prompt File
+
+Create a markdown file with your own analysis template. Use `{transcript}` as placeholder:
+
+```markdown
+# My Custom Analysis
+
+Summarize this meeting:
+
+1. Main Discussion Points
+2. Decisions Made
+3. Next Steps
+
+Transcript:
+{transcript}
+```
+
+Then run:
+```bash
+pdm run transcribe meeting.mp4 --prompt-file custom-prompt.md
 ```
 
 ## Understanding the Output
@@ -183,32 +226,50 @@ pdm run transcribe presentations/quarterly-review.mp4 --language es
 ### Transcript Format
 
 ```markdown
-# Job Interview Transcript: candidate-john
+# Meeting Transcript: team-sync
 
-**[00:15] SPEAKER_00:** Welcome to the interview. Can you tell me about your experience?
+**[00:15] SPEAKER_00:** Let's start with the project update. What's the current status?
 
-**[00:22] SPEAKER_01:** Thank you for having me. I've worked in software development for 5 years...
+**[00:22] SPEAKER_01:** We completed the core module yesterday. Testing starts next week.
 
-**[01:30] SPEAKER_00:** That's impressive. What technologies are you most comfortable with?
+**[01:30] SPEAKER_00:** Great. Any blockers we should discuss?
 ```
 
 **Notes**:
 - `[00:15]` = minutes:seconds timestamp
-- `SPEAKER_00`, `SPEAKER_01` = automatically detected speakers (usually interviewer/candidate)
+- `SPEAKER_00`, `SPEAKER_01` = automatically detected speakers
 - `[inaudible]` = segments the AI couldn't understand (filtered for hallucinations)
 
-### Analysis Format (Optional)
+### Analysis Format (Generic Meeting)
+
+```markdown
+# Meeting Analysis
+
+1. **Key Topics**: Main subjects discussed
+   - Project status update
+   - Testing timeline
+   
+2. **Decisions Made**: Any conclusions or agreements
+   - Testing starts next week
+   
+3. **Action Items**: Tasks or follow-ups assigned
+   - Prepare test cases
+   
+4. **Open Questions**: Unresolved items needing attention
+   - Resource allocation for testing
+```
+
+### Analysis Format (Job Interview)
 
 ```markdown
 # Interview Analysis
 
 1. **Strengths**: What did the candidate do well?
    - Clear technical explanations
-   - Good use of examples from past experience
+   - Good use of examples
    
 2. **Areas for Improvement**: Where could they improve?
-   - Could be more concise in responses
-   - More specific metrics in project descriptions
+   - Could be more concise
    
 3. **Communication Style**: How was their clarity, confidence, professionalism?
 4. **Technical Answers**: If applicable, assess depth and accuracy
@@ -224,11 +285,22 @@ pdm run transcribe presentations/quarterly-review.mp4 --language es
 - **OpenAI API**: Works everywhere, but costs money (~$0.36/hour) and sends your audio to their servers.
 
 **We chose MLX-Whisper because**:
-- Job interviews are private - local processing is better
+- Meeting recordings are private - local processing is better
 - Once set up, it's free forever
 - 3-5x faster on M-series Macs (minutes vs hours)
 
 **If you don't have a Mac**: You'd need to modify the code to use OpenAI Whisper API or another alternative.
+
+### Why Generic as Default Meeting Type?
+
+**Breaking Change in v0.3.0**: The default changed from `interview` to `generic`.
+
+**Reasoning**:
+- Most recordings are not interviews
+- Generic template works for any professional conversation
+- Interview-specific analysis requires explicit `--type interview`
+
+**Migration**: If you want interview analysis, add `--type interview` to your command.
 
 ### Why PDM Instead of Regular pip?
 
@@ -272,11 +344,11 @@ sudo apt-get install ffmpeg  # Linux
 
 ### 3. "LLM analysis didn't run"
 
-**Problem**: You didn't set `LLM_API_KEY` in `.env`, or it's invalid.
+**Problem**: You didn't set `GEMINI_API_KEY` (or fallback `LLM_API_KEY`) in `.env`, or the key is invalid.
 
 **Check**: 
 ```bash
-cat .env | grep LLM  # Should show your key
+cat .env | grep -E "GEMINI|LLM"  # Should show your key
 ```
 
 If missing, analysis is skipped gracefully - you still get the transcript.
@@ -374,14 +446,14 @@ Processing time depends on:
 
 ## Cost Breakdown
 
-If using OpenCode Zen LLM analysis:
+If using Gemini LLM analysis:
 
-| Video Length | Input Tokens | Cost |
-|--------------|--------------|------|
-| 30 min interview | ~10,000 | $0.005 |
-| 1 hour interview | ~20,000 | $0.01 |
+| Video Length | Input Tokens | Typical Cost |
+|--------------|--------------|--------------|
+| 30 min interview | ~10,000 | See current Gemini pricing |
+| 1 hour interview | ~20,000 | See current Gemini pricing |
 
-Kimi K2.5 is priced at $0.60/1M input tokens, $3/3M output tokens. Most interview analysis costs 1-2 cents.
+This script uses `gemini-3-flash-preview` by default. Check current pricing at Google AI Studio pricing docs.
 
 ## Troubleshooting
 
@@ -394,7 +466,7 @@ Create a `.env` file with: `HF_ACCESS_TOKEN=your_token_here`
 ### "Access to pyannote/speaker-diarization-3.1: GATED"
 Visit the model page on Hugging Face and accept the user agreement
 
-### "LLM_API_KEY not found"
+### "GEMINI_API_KEY or LLM_API_KEY not found"
 The transcript will still be generated, but AI analysis will be skipped with a warning.
 
 ### Out of memory errors
@@ -418,7 +490,7 @@ Run `pdm sync` to ensure you have the correct versions.
 
 ```
 jobs/
-├── transcribe_diarize.py   # Main script (274 lines)
+├── transcribe_diarize.py   # Main script
 ├── pyproject.toml          # Dependencies and PDM config
 ├── pdm.lock               # Exact versions locked
 ├── .env                   # Your secrets (never commit this!)
@@ -469,4 +541,4 @@ Copyright (c) 2026 Joao Marcos Visotaky Junior
 - [MLX-Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) - Apple's optimized Whisper implementation
 - [Pyannote](https://github.com/pyannote/pyannote-audio) - Speaker diarization pipeline
 - [Hugging Face](https://huggingface.co/) - Model hosting and access
-- [OpenCode Zen](https://opencode.ai/zen/) - LLM API gateway
+- [Google Gemini API](https://ai.google.dev/) - LLM analysis provider
