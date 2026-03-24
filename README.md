@@ -30,6 +30,8 @@ Use `--prompt-file` to provide your own analysis template (markdown file with `{
 
 ### Quick Start
 
+Native on Apple Silicon:
+
 ```bash
 # 1. Install dependencies
 pdm install
@@ -43,6 +45,20 @@ pdm run transcribe meeting.mp4
 
 # For job interviews
 pdm run transcribe interview.mp4 --type interview
+```
+
+Cross-platform with Docker:
+
+```bash
+# 1. Create the HuggingFace secret file
+mkdir -p secrets input output
+printf 'hf_your_token_here' > secrets/hf_access_token.txt
+
+# 2. Build the image
+docker compose build
+
+# 3. Put your video in ./input and run the container
+docker compose run --rm transcribe /data/input/meeting.mp4 --output /data/output
 ```
 
 You'll get:
@@ -73,7 +89,7 @@ FFmpeg extracts clean audio (16kHz mono WAV)
     ↓
 Pyannote AI figures out "Speaker A" vs "Speaker B" vs "Speaker C"
     ↓
-MLX-Whisper (Apple Silicon optimized) converts speech to text
+Selected transcription backend converts speech to text
     ↓
 System matches text segments to speakers by timing overlap
     ↓
@@ -88,17 +104,19 @@ Gemini 3 Flash Preview reads transcript and gives structured feedback
 |------|------|-----------------|
 | Audio Extraction | FFmpeg | Industry standard, handles any video format |
 | Speaker ID | Pyannote 3.1 | Best open-source diarization model |
-| Transcription | MLX-Whisper | 3-5x faster than OpenAI on M-series Macs |
+| Transcription | MLX-Whisper or faster-whisper | MLX stays fastest on Apple Silicon, faster-whisper unlocks Docker |
 | Analysis | Gemini 3 Flash Preview | Fast, low-cost, good quality |
 
 ## Requirements
 
 ### System Requirements
 
-- **macOS with Apple Silicon** (M1/M2/M3) - MLX-Whisper requires this
+- **Option A: Apple Silicon Mac** (M1/M2/M3) for the fastest native MLX backend
+- **Option B: Docker** on macOS, Linux, or Windows for the cross-platform faster-whisper backend
 - **Python 3.11+**
-- **PDM** - Python dependency manager: `pip install pdm`
-- **FFmpeg** - Audio/video tool: `brew install ffmpeg`
+- **PDM** for native installs: `pip install pdm`
+- **FFmpeg** for native installs: `brew install ffmpeg`
+- **Docker Desktop** or Docker Engine for containerized use
 - **HuggingFace account** - Free, needed for Pyannote speaker model
 - **~15GB free disk space** (for model downloads on first run)
 - **8GB+ RAM** recommended
@@ -109,10 +127,11 @@ The system automatically downloads AI models on first run:
 
 | Model | Size | Purpose |
 |-------|------|---------|
-| Whisper Large v3 (MLX) | ~3GB | Speech-to-text transcription |
+| Whisper Large v3 (MLX) | ~3GB | Native Apple Silicon transcription |
+| Whisper Large v3 (faster-whisper) | ~1.5GB | Cross-platform Docker transcription |
 | Pyannote Diarization 3.1 | ~400MB | Speaker identification |
 | Pyannote Segmentation 3.0 | ~300MB | Audio segmentation |
-| **Total (first run)** | **~4-5GB** | **Minimum required** |
+| **Total (first run)** | **~3-5GB** | **Depends on backend** |
 
 Models are cached in `~/.cache/` and reused across runs.
 
@@ -144,6 +163,8 @@ EOF
 
 ### 3. Install and Run
 
+#### Native Apple Silicon
+
 ```bash
 # Install all dependencies (this creates a .venv managed by PDM)
 pdm install
@@ -162,6 +183,22 @@ pdm run transcribe interview.mp4 --skip-analysis
 
 # Analyze an existing transcript file
 pdm run transcribe interview-transcript.md --analyze-only
+```
+
+#### Docker
+
+```bash
+# Build once
+docker compose build
+
+# Run on a file placed in ./input
+docker compose run --rm transcribe /data/input/interview.mp4 --output /data/output
+
+# Force the Docker backend explicitly
+docker compose run --rm transcribe /data/input/interview.mp4 --output /data/output --backend faster
+
+# Skip analysis when you do not mount an LLM secret
+docker compose run --rm transcribe /data/input/interview.mp4 --output /data/output --skip-analysis
 ```
 
 ## Usage Examples
@@ -278,18 +315,18 @@ pdm run transcribe meeting.mp4 --prompt-file custom-prompt.md
 
 ## Key Decisions Explained
 
-### Why MLX-Whisper Instead of OpenAI's API?
+### Why Two Whisper Backends?
 
 **The Tradeoff**:
-- **MLX-Whisper** (what we use): Free, runs locally, super fast on Apple Silicon. Mac-only.
-- **OpenAI API**: Works everywhere, but costs money (~$0.36/hour) and sends your audio to their servers.
+- **MLX-Whisper**: Best native performance on Apple Silicon, but Mac-only.
+- **faster-whisper**: Works in Docker across macOS, Linux, and Windows, but is slower on CPU than MLX.
 
-**We chose MLX-Whisper because**:
-- Meeting recordings are private - local processing is better
-- Once set up, it's free forever
-- 3-5x faster on M-series Macs (minutes vs hours)
+**We kept both because**:
+- Meeting recordings stay local in both paths
+- Mac users keep the fastest experience
+- Teams can now share one Docker workflow without requiring Apple Silicon
 
-**If you don't have a Mac**: You'd need to modify the code to use OpenAI Whisper API or another alternative.
+**Default behavior**: `auto` uses MLX on Apple Silicon and faster-whisper everywhere else.
 
 ### Why Generic as Default Meeting Type?
 
@@ -346,12 +383,9 @@ sudo apt-get install ffmpeg  # Linux
 
 **Problem**: You didn't set `GEMINI_API_KEY` (or fallback `LLM_API_KEY`) in `.env`, or the key is invalid.
 
-**Check**: 
-```bash
-cat .env | grep -E "GEMINI|LLM"  # Should show your key
-```
+**Check**: confirm `GEMINI_API_KEY`, `LLM_API_KEY`, `GEMINI_API_KEY_FILE`, or `LLM_API_KEY_FILE` is set.
 
-If missing, analysis is skipped gracefully - you still get the transcript.
+If missing, analysis is skipped gracefully and you still get the transcript.
 
 ### 4. "Speakers are labeled wrong"
 

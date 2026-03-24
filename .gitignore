@@ -65,6 +65,13 @@ models/
 test_*
 *_test.*
 check_*.py
+!tests/
+!tests/test_*.py
 
 # PDM
 .pdm-python
+
+# Docker local folders
+input/
+output/
+secrets/

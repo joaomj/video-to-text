@@ -2,7 +2,7 @@
 
 ## Overview
 
-A CLI tool for transcribing and diarizing video recordings (MP4/MOV format). Extracts audio, identifies speakers, transcribes speech using MLX-Whisper, and optionally analyzes transcripts with LLM. Supports multiple meeting types: interviews, career discussions, ML meetings, and generic professional meetings.
+A CLI tool for transcribing and diarizing video recordings (MP4/MOV format). Extracts audio, identifies speakers, transcribes speech using a pluggable Whisper backend, and optionally analyzes transcripts with an LLM. Native Apple Silicon runs use MLX-Whisper, while Docker and other cross-platform environments use faster-whisper.
 
 ## Architecture
 
@@ -15,7 +15,11 @@ FFmpeg: Audio Extraction → WAV 16kHz mono
     ↓
 Pyannote: Speaker Diarization → Speaker time ranges
     ↓
-MLX-Whisper: Speech-to-Text → Transcript segments with timestamps
+Whisper Backend Selection
+    ├─ MLX-Whisper on Apple Silicon
+    └─ faster-whisper in Docker/cross-platform mode
+    ↓
+Speech-to-Text → Transcript segments with timestamps
     ↓
 Alignment: Match speakers to transcript segments by time overlap
     ↓
@@ -70,14 +74,22 @@ MEETING_PROMPTS = {
 ### Environment Variables (`.env`)
 
 ```bash
-HF_ACCESS_TOKEN=hf_xxx  # Required: HuggingFace for Pyannote diarization
-GEMINI_API_KEY=xxx      # Optional: Preferred Gemini key for analysis
-LLM_API_KEY=xxx         # Optional: Backward-compatible fallback key
+HF_ACCESS_TOKEN=hf_xxx           # Required: HuggingFace for Pyannote diarization
+HF_ACCESS_TOKEN_FILE=/run/...    # Optional file-based secret alternative
+GEMINI_API_KEY=xxx               # Optional: Preferred Gemini key for analysis
+GEMINI_API_KEY_FILE=/run/...     # Optional file-based secret alternative
+LLM_API_KEY=xxx                  # Optional: Backward-compatible fallback key
+LLM_API_KEY_FILE=/run/...        # Optional file-based secret alternative
+TRANSCRIPTION_BACKEND=auto       # auto, mlx, or faster
+WHISPER_MODEL=large-v3           # large-v3 by default
+FASTER_WHISPER_DEVICE=cpu        # cpu for Docker CPU images
+FASTER_WHISPER_COMPUTE_TYPE=int8 # smaller CPU footprint for Docker
 ```
 
 Loaded via `pydantic-settings` with:
 - Type-safe validation
 - Auto-secret masking (keys never appear in logs)
+- File-based secret loading for Docker secrets or mounted secret files
 - UTF-8 encoding
 
 ## CLI Interface
@@ -93,6 +105,7 @@ Options:
   --output, -o      Output directory (default: current working directory)
   --type, -t        Meeting type: interview or generic (default: generic)
   --prompt-file, -p Custom analysis prompt file (markdown)
+  --backend         Transcription backend override: auto, mlx, or faster
   --skip-analysis   Skip LLM analysis even if API key present
   --analyze-only    Run only LLM analysis on existing transcript
 ```
@@ -129,7 +142,7 @@ The script displays progress bars for long-running operations:
 |------|-------------------|
 | Audio Extraction | Spinner with step name |
 | Diarization | 3-step progress (load audio → create tensor → run model) |
-| Speech Transcription | MLX-Whisper built-in progress |
+| Speech Transcription | MLX-Whisper or faster-whisper model progress |
 | Speaker Alignment | Per-segment progress bar |
 | LLM Analysis | Single request progress |
 
@@ -159,6 +172,7 @@ Each step shows:
 | Package | Purpose |
 |---------|---------|
 | `mlx-whisper` | Apple's MLX-optimized Whisper (M-series Macs) |
+| `faster-whisper` | Cross-platform Whisper backend for Docker and CPU workflows |
 | `pyannote-audio` | Speaker diarization |
 | `torch<2.6`/`torchaudio<2.6` | ML framework + audio loading (pinned for compatibility) |
 | `huggingface-hub<1.0` | Model download + auth (maintains use_auth_token API) |
@@ -168,20 +182,20 @@ Each step shows:
 
 ## Decision Log
 
-### Why MLX-Whisper over OpenAI Whisper?
+### Why MLX-Whisper plus faster-whisper?
 
-**Decision**: Use MLX-Whisper (Apple Silicon optimized)
+**Decision**: Use dual local backends.
 
 **Pros**:
-- 3-5x faster on M-series Macs
-- No API costs
-- Local processing (privacy)
+- MLX remains the fastest native option on Apple Silicon
+- faster-whisper enables Docker packaging and cross-platform adoption
+- Both paths keep audio local and avoid API usage costs
 
 **Cons**:
-- Mac-only (M-series)
-- Slightly different model weights
+- Two backend implementations to maintain
+- Docker CPU runs are slower than native MLX on M-series Macs
 
-**Alternative**: OpenAI Whisper API - better cross-platform, but requires internet + costs.
+**Alternative**: OpenAI Whisper API would simplify packaging, but adds ongoing cost and sends audio off-machine.
 
 ### Why Pyannote 3.1?
 
@@ -226,6 +240,7 @@ State-of-the-art speaker diarization with:
 
 - Secrets via `SecretStr` - never logged
 - `.env` in `.gitignore` (user-managed)
+- Docker Compose uses a file-based HuggingFace secret path instead of embedding secret values in env vars
 - No hardcoded credentials
 - API keys validated but not exposed
 
@@ -233,21 +248,26 @@ State-of-the-art speaker diarization with:
 
 ```
 jobs/
-├── transcribe_diarize.py   # Main script
-├── pyproject.toml          # PDM + dependencies
-├── pdm.lock               # Locked dependency versions
-├── .env                   # Secrets (user-managed, git-ignored)
+├── transcribe_diarize.py        # Compatibility entry point
+├── transcribe_diarize_app/      # Package modules and backend selection
+├── pyproject.toml               # Native PDM dependencies
+├── requirements-docker.txt      # Docker dependency set without MLX
+├── Dockerfile                   # CPU-first container image
+├── docker-compose.yml           # Local Docker workflow
+├── .env                         # Secrets (user-managed, git-ignored)
+├── tests/                       # Backend selection and settings tests
 └── docs/
-    └── tech-context.md    # This file
+    ├── tech-context.md          # This file
+    └── packaging-phase-plan.md  # Temporary execution plan
 ```
 
 ## Known Limitations
 
-1. **Platform**: MLX-Whisper requires Apple Silicon (M1/M2/M3)
-2. **FFmpeg**: Required system dependency
+1. **Docker CPU performance**: Cross-platform packaging is slower than native MLX on Apple Silicon
+2. **FFmpeg**: Required system dependency for native runs, bundled in Docker
 3. **HuggingFace**: Requires access token + model permissions
 4. **LLM API**: Optional - analysis skipped without key
-5. **File size**: Large videos may require significant RAM
+5. **File size**: Large videos may require significant RAM and several GB of model cache
 
 ## Bug Fixes & Compatibility
 

@@ -1,0 +1,16 @@
+.env
+.git
+.gitignore
+.ruff_cache
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.cache/
+input/
+output/
+secrets/
+*-analysis.md
+*-transcript.md
