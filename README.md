@@ -63,6 +63,46 @@ docker compose run --rm transcribe /data/input/meeting.mp4 --output /data/output
 
 Prebuilt GHCR image users can use `docker-compose.ghcr.yml`, which defaults to the persistent named volume `transcribe-diarize-cache` for model reuse across runs.
 
+Run from GHCR without building locally:
+
+```bash
+# 1. Pull the published image
+docker pull ghcr.io/<owner>/transcribe-diarize:latest
+
+# 2. Prepare local folders and required Hugging Face secret
+mkdir -p input output secrets
+printf 'hf_your_token_here' > secrets/hf_access_token.txt
+
+# 3. Create the persistent model cache volume once
+docker volume create transcribe-diarize-cache
+
+# 4. Run the container against a local file in ./input
+docker run --rm \
+  -v "$PWD/input:/data/input:ro" \
+  -v "$PWD/output:/data/output" \
+  -v transcribe-diarize-cache:/home/transcribe/.cache \
+  -v "$PWD/secrets/hf_access_token.txt:/run/secrets/hf_access_token:ro" \
+  -e HF_ACCESS_TOKEN_FILE=/run/secrets/hf_access_token \
+  -e TRANSCRIPTION_BACKEND=faster \
+  ghcr.io/<owner>/transcribe-diarize:latest \
+  /data/input/meeting.mp4 --output /data/output
+```
+
+Optional analysis with an LLM key:
+
+```bash
+docker run --rm \
+  -v "$PWD/input:/data/input:ro" \
+  -v "$PWD/output:/data/output" \
+  -v transcribe-diarize-cache:/home/transcribe/.cache \
+  -v "$PWD/secrets/hf_access_token.txt:/run/secrets/hf_access_token:ro" \
+  -e HF_ACCESS_TOKEN_FILE=/run/secrets/hf_access_token \
+  -e GEMINI_API_KEY=your_gemini_key \
+  -e TRANSCRIPTION_BACKEND=faster \
+  ghcr.io/<owner>/transcribe-diarize:latest \
+  /data/input/meeting.mp4 --output /data/output
+```
+
 You'll get:
 - `meeting-transcript.md` - Full transcript with speaker labels
 - `meeting-analysis.md` - AI analysis (if API key provided)
@@ -137,6 +177,8 @@ The system automatically downloads AI models on first run:
 
 Models are cached in `~/.cache/` and reused across runs.
 
+For GHCR users, the recommended cache location is the named Docker volume `transcribe-diarize-cache`, which keeps model downloads between container runs by default.
+
 ## Setup Guide
 
 ### 1. Get Your API Keys
@@ -202,6 +244,20 @@ docker compose run --rm transcribe /data/input/interview.mp4 --output /data/outp
 # Skip analysis when you do not mount an LLM secret
 docker compose run --rm transcribe /data/input/interview.mp4 --output /data/output --skip-analysis
 ```
+
+#### GHCR Prebuilt Image
+
+```bash
+# Pull the published image
+docker pull ghcr.io/<owner>/transcribe-diarize:latest
+
+# Run with the provided GHCR compose file after setting the image reference
+TRANSCRIBE_DIARIZE_IMAGE=ghcr.io/<owner>/transcribe-diarize:latest \
+docker compose -f docker-compose.ghcr.yml run --rm transcribe \
+  /data/input/interview.mp4 --output /data/output
+```
+
+The GHCR compose path uses the stable named volume `transcribe-diarize-cache`, so Whisper and Pyannote downloads are reused automatically across runs.
 
 ## Usage Examples
 
@@ -404,7 +460,26 @@ If missing, analysis is skipped gracefully and you still get the transcript.
 - 1 hour video = ~15-20 minutes
 - Uses significant RAM (8GB+ recommended)
 
-### 6. Transcript has weird repetitions
+**GHCR note**: The first run is always the slowest because the container downloads Whisper and Pyannote models into `transcribe-diarize-cache`. Later runs reuse that cache volume.
+
+### 6. "It downloads the models every time"
+
+**Problem**: The container is being run without the persistent named volume.
+
+**Fix**:
+```bash
+docker volume create transcribe-diarize-cache
+
+docker run --rm \
+  -v transcribe-diarize-cache:/home/transcribe/.cache \
+  ...
+```
+
+If the volume mount is missing, the container starts with a fresh empty cache each run.
+
+If output writes fail on Linux, make sure your local `input`, `output`, and `secrets` folders exist and are writable by your user before starting the container.
+
+### 7. Transcript has weird repetitions
 
 **Problem**: Whisper sometimes hallucinates (repeats "thank you" endlessly, etc.).
 

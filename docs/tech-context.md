@@ -244,6 +244,14 @@ State-of-the-art speaker diarization with:
 - No hardcoded credentials
 - API keys validated but not exposed
 
+## Distribution
+
+- `docker-compose.yml` supports local build-and-run development.
+- `docker-compose.ghcr.yml` supports pull-and-run usage against a published GHCR image.
+- `.github/workflows/publish-image.yml` validates multi-arch builds on pull requests and publishes on `main` pushes and version tags.
+- GHCR users persist model downloads in the stable named Docker volume `transcribe-diarize-cache` mounted at `/home/transcribe/.cache`.
+- Whisper and Pyannote weights are intentionally downloaded at runtime instead of being baked into the public image.
+
 ## File Structure
 
 ```
@@ -254,6 +262,8 @@ jobs/
 ├── requirements-docker.txt      # Docker dependency set without MLX
 ├── Dockerfile                   # CPU-first container image
 ├── docker-compose.yml           # Local Docker workflow
+├── docker-compose.ghcr.yml      # Pulled-image workflow with persistent cache
+├── .github/workflows/           # GHCR publish automation
 ├── .env                         # Secrets (user-managed, git-ignored)
 ├── tests/                       # Backend selection and settings tests
 └── docs/
