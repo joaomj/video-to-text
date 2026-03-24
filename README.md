@@ -61,6 +61,8 @@ docker compose build
 docker compose run --rm transcribe /data/input/meeting.mp4 --output /data/output
 ```
 
+Prebuilt GHCR image users can use `docker-compose.ghcr.yml`, which defaults to the persistent named volume `transcribe-diarize-cache` for model reuse across runs.
+
 You'll get:
 - `meeting-transcript.md` - Full transcript with speaker labels
 - `meeting-analysis.md` - AI analysis (if API key provided)

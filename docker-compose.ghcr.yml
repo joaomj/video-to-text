@@ -1,9 +1,6 @@
 services:
   transcribe:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: transcribe-diarize:latest
+    image: ${TRANSCRIBE_DIARIZE_IMAGE:?Set TRANSCRIBE_DIARIZE_IMAGE to a GHCR image tag}
     read_only: true
     tmpfs:
       - /tmp
