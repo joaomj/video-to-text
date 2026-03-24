@@ -6,7 +6,6 @@ from typing import Any, TypedDict
 import httpx
 import torch
 import torchaudio
-from huggingface_hub import login
 from pyannote.audio import Pipeline
 from tqdm import tqdm
 
@@ -136,12 +135,14 @@ def process_transcription(
     backend_name: str | None = None,
 ) -> None:
     hf_token = settings.require_hf_access_token().get_secret_value()
-    login(token=hf_token)
     template = MEETING_PROMPTS.get(meeting_type, MEETING_PROMPTS["generic"])
 
     with timed_step("Speaker Diarization"):
         logger.info("Loading Pyannote pipeline...")
-        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            use_auth_token=hf_token,
+        )
         if pipeline is None:
             logger.error("Failed to load Pyannote pipeline")
             sys.exit(1)
