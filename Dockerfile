@@ -20,13 +20,18 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
+    XDG_CACHE_HOME=/home/transcribe/.cache \
+    HF_HOME=/home/transcribe/.cache/huggingface \
+    MPLCONFIGDIR=/home/transcribe/.cache/matplotlib \
     PATH="/opt/venv/bin:${PATH}"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system transcribe && \
-    useradd --system --create-home --gid transcribe transcribe
+    useradd --system --create-home --gid transcribe transcribe && \
+    mkdir -p /home/transcribe/.cache/huggingface /home/transcribe/.cache/matplotlib /home/transcribe/.cache/torch && \
+    chown -R transcribe:transcribe /home/transcribe
 
 WORKDIR /app
 
