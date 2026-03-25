@@ -53,8 +53,9 @@ mkdir -p input output secrets
 printf 'hf_your_token_here' > secrets/hf_access_token.txt
 
 # 2. Pull and run
-docker pull ghcr.io/<owner>/transcribe-diarize:latest
-docker compose -f docker-compose.ghcr.yml run --rm transcribe \
+docker pull ghcr.io/joaomj/video-to-text:latest
+TRANSCRIBE_DIARIZE_IMAGE=ghcr.io/joaomj/video-to-text:latest \
+  docker compose -f docker-compose.ghcr.yml run --rm transcribe \
   /data/input/meeting.mp4 --output /data/output
 ```
 
