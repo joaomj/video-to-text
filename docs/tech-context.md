@@ -271,6 +271,19 @@ jobs/
     └── packaging-phase-plan.md  # Temporary execution plan
 ```
 
+## Troubleshooting
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "FFmpeg not found" | FFmpeg not installed or not in PATH | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux) |
+| "HF_ACCESS_TOKEN not found" | Missing or invalid HuggingFace token | Check `.env` file or mounted secret file |
+| "Access to pyannote/speaker-diarization-3.1: GATED" | Model agreement not accepted | Visit https://huggingface.co/pyannote/speaker-diarization-3.1 and click "Access repository" |
+| "GEMINI_API_KEY or LLM_API_KEY not found" | Missing LLM API key | Add key to `.env` or set environment variable |
+| "Speakers are labeled wrong" | Pyannote assigns SPEAKER_00/01 arbitrarily | Manual fix in output markdown based on context |
+| Long processing times | Video length + hardware limitations | Normal: 30min video = ~5-10min processing |
+| "It downloads the models every time" | Missing persistent cache volume | Ensure `transcribe-diarize-cache` volume is mounted |
+| "Weights only load failed" (PyTorch) | Compatibility issue with Pyannote 3.4 | Run `pdm sync` to get pinned versions (torch<2.6) |
+
 ## Known Limitations
 
 1. **Docker CPU performance**: Cross-platform packaging is slower than native MLX on Apple Silicon
@@ -301,8 +314,6 @@ jobs/
 - [ ] Export formats (JSON, SRT)
 
 ## Version History
-
-See [CHANGELOG.md](../CHANGELOG.md) for detailed release notes.
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
