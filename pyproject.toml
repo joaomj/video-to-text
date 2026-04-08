@@ -66,3 +66,6 @@ typeCheckingMode = "basic"
 dev = [
     "ruff>=0.15.6",
 ]
+test = [
+    "pytest>=9.0.3",
+]
