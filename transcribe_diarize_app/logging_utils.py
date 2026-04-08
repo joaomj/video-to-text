@@ -5,6 +5,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import timedelta
 
+from tqdm import tqdm
+
 RUN_ID = uuid.uuid4().hex[:8]
 STEP_TIMES: dict[str, float] = {}
 SECONDS_PER_MINUTE = 60
@@ -16,14 +18,46 @@ class RunIdFilter(logging.Filter):
         return True
 
 
+class TqdmLoggingHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)
+        except Exception:
+            self.handleError(record)
+
+
+class PipelineProgress:
+    def __init__(self, total: int, desc: str = "Processing") -> None:
+        self._bar = tqdm(
+            total=total,
+            desc=desc,
+            unit="step",
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        )
+
+    def step(self, label: str) -> None:
+        self._bar.set_postfix_str(label)
+        self._bar.update(1)
+
+    def close(self) -> None:
+        self._bar.close()
+
+
 def configure_logging() -> logging.Logger:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] [%(run_id)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    handler = TqdmLoggingHandler()
+    handler.addFilter(RunIdFilter())
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] [%(run_id)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     )
-    for handler in logging.root.handlers:
-        handler.addFilter(RunIdFilter())
+    root_logger.addHandler(handler)
     return logging.getLogger("transcribe_diarize")
 
 

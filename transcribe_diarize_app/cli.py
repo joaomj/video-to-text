@@ -1,9 +1,11 @@
 import argparse
+import os
 import tempfile
 import time
 from pathlib import Path
 
-from .logging_utils import STEP_TIMES, logger, print_timing_summary, timed_step
+from .constants import SUPPORTED_LANGUAGES
+from .logging_utils import STEP_TIMES, PipelineProgress, logger, print_timing_summary, timed_step
 from .pipeline import analyze_transcript, extract_audio, process_transcription
 from .settings import Settings
 
@@ -26,9 +28,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "input", help="Path to video file (MP4/MOV) or transcript (.md) if --analyze-only"
     )
-    parser.add_argument("--language", default="en", help="Language code (default: en)")
     parser.add_argument(
-        "--output", "-o", type=Path, help="Output directory (default: current directory)"
+        "--language",
+        default="en",
+        choices=sorted(SUPPORTED_LANGUAGES),
+        help=f"Language code (default: en). Supported: {', '.join(sorted(SUPPORTED_LANGUAGES))}",
+    )
+    parser.add_argument(
+        "--output", "-o", type=Path, help="Output directory (default: same as input file)"
     )
     parser.add_argument(
         "--type",
@@ -54,6 +61,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_output_dir(input_path: Path, output_arg: Path | None) -> Path:
+    if output_arg is not None:
+        output_dir = output_arg
+    else:
+        input_parent = input_path.parent
+        output_dir = input_parent if os.access(input_parent, os.W_OK) else Path.cwd()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -75,9 +92,10 @@ def main() -> None:
             f"Invalid file type: {input_path.suffix}. Supported: {sorted(valid_extensions)}"
         )
 
-    output_dir = args.output if args.output else Path.cwd()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = resolve_output_dir(input_path, args.output)
     output_path = output_dir / f"{input_path.stem}-transcript.md"
+    total_steps = 4 if args.skip_analysis else 5
+    progress = PipelineProgress(total_steps, desc=f"Processing {input_path.name}")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_audio_path = Path(temp_dir) / "extracted_audio.wav"
@@ -86,6 +104,7 @@ def main() -> None:
             logger.info("Extracting audio from %s...", input_path.name)
             extract_audio(input_path, temp_audio_path)
             logger.info("Audio extracted successfully")
+            progress.step("Extracting audio")
 
         process_transcription(
             temp_audio_path,
@@ -94,6 +113,7 @@ def main() -> None:
             settings,
             meeting_type=args.type,
             backend_name=args.backend,
+            progress=progress,
         )
 
     if not args.skip_analysis:
@@ -102,8 +122,10 @@ def main() -> None:
             settings,
             meeting_type=args.type,
             prompt_file=args.prompt_file,
+            progress=progress,
         )
 
+    progress.close()
     STEP_TIMES["Script Total"] = time.perf_counter() - script_start
     print_timing_summary()
     logger.info("All done! Check %s", output_path)
@@ -120,12 +142,15 @@ def run_analysis_only(
         raise SystemExit(f"Invalid file type for analysis: {input_path.suffix}. Use .md or .txt")
 
     logger.info("Running analysis only on %s", input_path.name)
+    progress = PipelineProgress(1, desc=f"Analyzing {input_path.name}")
     analyze_transcript(
         input_path,
         settings,
         meeting_type=meeting_type,
         prompt_file=prompt_file,
+        progress=progress,
     )
+    progress.close()
     STEP_TIMES["Script Total"] = time.perf_counter() - script_start
     print_timing_summary()
     logger.info("Analysis complete!")

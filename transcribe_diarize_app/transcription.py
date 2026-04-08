@@ -61,7 +61,7 @@ class MlxTranscriber:
             no_speech_threshold=0.5,
             hallucination_silence_threshold=1.0,
             initial_prompt=request.initial_prompt,
-            verbose=True,
+            verbose=False,
         )
         return {"segments": normalize_segments(result.get("segments", []))}
 

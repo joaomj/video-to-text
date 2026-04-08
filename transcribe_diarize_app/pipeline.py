@@ -1,3 +1,4 @@
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -7,10 +8,15 @@ import httpx
 import torch
 import torchaudio
 from pyannote.audio import Pipeline
-from tqdm import tqdm
 
-from .constants import MEETING_PROMPTS
-from .logging_utils import format_timestamp, logger, timed_step
+from .constants import (
+    HALLUCINATION_PATTERNS,
+    MEETING_PROMPTS,
+    MIN_HALLUCINATION_TEXT_LENGTH,
+    MIN_REPETITION_WORDS,
+    REPETITION_RATIO_THRESHOLD,
+)
+from .logging_utils import PipelineProgress, format_timestamp, logger, timed_step
 from .settings import Settings
 from .transcription import TranscriptionRequest, WhisperSegment, create_transcriber
 
@@ -20,12 +26,6 @@ class TranscriptSegment(TypedDict):
     end: float
     speaker: str
     text: str
-
-
-MIN_HALLUCINATION_TEXT_LENGTH = 3
-MIN_REPETITION_WORDS = 4
-REPETITION_RATIO_THRESHOLD = 0.6
-DIARIZATION_PROGRESS_STEPS = 3
 
 
 def is_hallucination(text: str) -> bool:
@@ -38,16 +38,7 @@ def is_hallucination(text: str) -> bool:
         repeated_word_ratio = words.count(max(set(words), key=words.count)) / len(words)
     if len(words) >= MIN_REPETITION_WORDS and repeated_word_ratio > REPETITION_RATIO_THRESHOLD:
         return True
-    patterns = [
-        "thank you. thank you.",
-        "thank you thank you",
-        "openness openness",
-        "finding out when",
-        "we discovered when we discovered",
-        "yeah. yeah. yeah. yeah",
-        "it was good when",
-    ]
-    return any(pattern in text_lower for pattern in patterns)
+    return any(pattern in text_lower for pattern in HALLUCINATION_PATTERNS)
 
 
 def extract_audio(video_path: Path, output_audio_path: Path) -> None:
@@ -78,6 +69,7 @@ def analyze_transcript(
     settings: Settings,
     meeting_type: str = "generic",
     prompt_file: Path | None = None,
+    progress: PipelineProgress | None = None,
 ) -> Path | None:
     llm_api_key = settings.resolved_llm_api_key()
     if llm_api_key is None:
@@ -97,18 +89,16 @@ def analyze_transcript(
             prompt = template["analysis_prompt"].replace("{transcript}", transcript_text)
 
         try:
-            with tqdm(total=1, desc="Sending to LLM", unit="request") as pbar:
-                response = httpx.post(
-                    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-                    headers={"Authorization": f"Bearer {llm_api_key.get_secret_value()}"},
-                    json={
-                        "model": settings.llm_model,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                    timeout=120.0,
-                )
-                response.raise_for_status()
-                pbar.update(1)
+            response = httpx.post(
+                "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                headers={"Authorization": f"Bearer {llm_api_key.get_secret_value()}"},
+                json={
+                    "model": settings.llm_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=120.0,
+            )
+            response.raise_for_status()
         except httpx.HTTPError as exc:
             logger.error("Failed to analyze transcript: %s", exc)
             return None
@@ -123,6 +113,8 @@ def analyze_transcript(
         analysis_content = f"# {template['analysis_header']}\n\n{analysis}\n"
         analysis_path.write_text(analysis_content, encoding="utf-8")
         logger.info("Analysis saved to %s", analysis_path)
+        if progress is not None:
+            progress.step("Analyzing transcript")
         return analysis_path
 
 
@@ -133,11 +125,13 @@ def process_transcription(
     settings: Settings,
     meeting_type: str = "generic",
     backend_name: str | None = None,
+    progress: PipelineProgress | None = None,
 ) -> None:
     hf_token = settings.require_hf_access_token().get_secret_value()
     template = MEETING_PROMPTS.get(meeting_type, MEETING_PROMPTS["generic"])
 
     with timed_step("Speaker Diarization"):
+        logging.getLogger("pyannote").setLevel(logging.WARNING)
         logger.info("Loading Pyannote pipeline...")
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
@@ -157,13 +151,11 @@ def process_transcription(
             device = torch.device("cpu")
             pipeline.to(device)
 
-        with tqdm(total=DIARIZATION_PROGRESS_STEPS, desc="Diarization", unit="step") as pbar:
-            waveform, sample_rate = torchaudio.load(audio_path)
-            pbar.update(1)
-            audio_data: dict[str, Any] = {"waveform": waveform, "sample_rate": sample_rate}
-            pbar.update(1)
-            diarization = pipeline(audio_data)
-            pbar.update(1)
+        waveform, sample_rate = torchaudio.load(audio_path)
+        audio_data: dict[str, Any] = {"waveform": waveform, "sample_rate": sample_rate}
+        diarization = pipeline(audio_data)
+        if progress is not None:
+            progress.step("Diarizing speakers")
 
     selected_backend, transcriber = create_transcriber(settings, backend_name)
     logger.info("Using transcription backend: %s", selected_backend)
@@ -177,6 +169,8 @@ def process_transcription(
                 initial_prompt=template["initial_prompt"],
             )
         )
+        if progress is not None:
+            progress.step("Transcribing speech")
 
     with timed_step("Speaker Alignment"):
         transcript_segments = align_speakers(result.get("segments", []), diarization)
@@ -189,11 +183,13 @@ def process_transcription(
             transcript_segments,
         )
         logger.info("Transcript saved to %s", output_path)
+        if progress is not None:
+            progress.step("Aligning and writing")
 
 
 def align_speakers(segments: list[WhisperSegment], diarization: Any) -> list[TranscriptSegment]:
     transcript_segments: list[TranscriptSegment] = []
-    for segment in tqdm(segments, desc="Aligning speakers", unit="segment"):
+    for segment in segments:
         start = float(segment["start"])
         end = float(segment["end"])
         text = str(segment["text"]).strip()
@@ -208,9 +204,7 @@ def align_speakers(segments: list[WhisperSegment], diarization: Any) -> list[Tra
                 max_duration = overlap
                 speaker = str(diarization_speaker)
 
-        transcript_segments.append(
-            {"start": start, "end": end, "speaker": speaker, "text": text}
-        )
+        transcript_segments.append({"start": start, "end": end, "speaker": speaker, "text": text})
     return transcript_segments
 
 
