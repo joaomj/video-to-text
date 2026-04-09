@@ -88,9 +88,10 @@ FASTER_WHISPER_COMPUTE_TYPE=int8 # smaller CPU footprint for Docker
 
 Loaded via `pydantic-settings` with:
 - Type-safe validation
-- Auto-secret masking (keys never appear in logs)
 - File-based secret loading for Docker secrets or mounted secret files
 - UTF-8 encoding
+
+Secret values use Pydantic's `SecretStr` type to prevent accidental logging of API keys.
 
 ## CLI Interface
 
@@ -132,7 +133,7 @@ Example:
 2026-02-04 17:23:45 [INFO] [a1b2c3d4] Extracting audio from interview.mp4...
 ```
 
-**Implementation Note**: Uses `RunIdFilter` on all logging handlers to inject `run_id` into every log record (including library logs). This ensures external library logs also include the correlation ID.
+**Implementation Note**: Uses `RunIdFilter` on the root logging handler to inject `run_id` into every log record (including library logs). This ensures external library logs also include the correlation ID.
 
 ## Progress Bars and Timing
 
@@ -266,9 +267,8 @@ jobs/
 ├── .github/workflows/           # GHCR publish automation
 ├── .env                         # Secrets (user-managed, git-ignored)
 ├── tests/                       # Backend selection and settings tests
-└── docs/
-    ├── tech-context.md          # This file
-    └── packaging-phase-plan.md  # Temporary execution plan
+    └── docs/
+        └── tech-context.md          # This file
 ```
 
 ## Troubleshooting
