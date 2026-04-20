@@ -170,16 +170,16 @@ Each step shows:
 
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `mlx-whisper` | Apple's MLX-optimized Whisper (M-series Macs) |
-| `faster-whisper` | Cross-platform Whisper backend for Docker and CPU workflows |
-| `pyannote-audio` | Speaker diarization |
-| `torch<2.6`/`torchaudio<2.6` | ML framework + audio loading (pinned for compatibility) |
-| `huggingface-hub<1.0` | Model download + auth (maintains use_auth_token API) |
-| `pydantic-settings` | Type-safe .env handling |
-| `httpx` | HTTP client for Zen API |
-| `tqdm` | Progress bars for CLI |
+| Package | Purpose | Location |
+|---------|---------|----------|
+| `faster-whisper` | Cross-platform Whisper backend for Docker and CPU workflows | `[project.dependencies]` |
+| `pyannote-audio` | Speaker diarization | `[project.dependencies]` |
+| `torch<2.6`/`torchaudio<2.6` | ML framework + audio loading (pinned for compatibility) | `[project.dependencies]` |
+| `huggingface-hub<1.0` | Model download + auth (maintains use_auth_token API) | `[project.dependencies]` |
+| `pydantic-settings` | Type-safe .env handling | `[project.dependencies]` |
+| `httpx` | HTTP client for Zen API | `[project.dependencies]` |
+| `tqdm` | Progress bars for CLI | `[project.dependencies]` |
+| `mlx-whisper` | Apple's MLX-optimized Whisper (M-series Macs) | `[dependency-groups.macos]` |
 
 ## Decision Log
 
@@ -254,6 +254,7 @@ State-of-the-art speaker diarization with:
 - `.github/workflows/publish-image.yml` validates multi-arch builds on pull requests and publishes on `main` pushes and version tags.
 - GHCR users persist model downloads in the stable named Docker volume `transcribe-diarize-cache` mounted at `/home/transcribe/.cache`.
 - Whisper and Pyannote weights are intentionally downloaded at runtime instead of being baked into the public image.
+- Docker container uses `transcribe` as entrypoint (not `python transcribe_diarize.py`).
 
 ## File Structure
 
@@ -278,7 +279,7 @@ jobs/
 | Error | Cause | Solution |
 |-------|-------|----------|
 | "FFmpeg not found" | FFmpeg not installed or not in PATH | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux) |
-| "HF_ACCESS_TOKEN not found" | Missing or invalid HuggingFace token | Check `.env` file or mounted secret file |
+| "HF_ACCESS_TOKEN not found" | Missing or invalid HuggingFace token | Set `HF_ACCESS_TOKEN` in `.env` (local) or `secrets/hf_access_token.txt` (Docker) |
 | "Access to pyannote/speaker-diarization-3.1: GATED" | Model agreement not accepted | Visit https://huggingface.co/pyannote/speaker-diarization-3.1 and click "Access repository" |
 | "GEMINI_API_KEY or LLM_API_KEY not found" | Missing LLM API key | Add key to `.env` or set environment variable |
 | "Speakers are labeled wrong" | Pyannote assigns SPEAKER_00/01 arbitrarily | Manual fix in output markdown based on context |

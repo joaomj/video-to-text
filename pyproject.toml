@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "transcribe-diarize"
-version = "0.3.0"
+version = "0.4.0"
 description = "Transcribe and diarize video files (MP4/MOV) with LLM analysis"
 requires-python = ">=3.11"
 dependencies = [
