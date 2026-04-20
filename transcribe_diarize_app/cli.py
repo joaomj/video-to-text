@@ -16,13 +16,13 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  pdm run transcribe video.mp4\n"
-            "  pdm run transcribe interview.mov --type interview --language pt\n"
-            "  pdm run transcribe video.mp4 --output /path\n"
-            "  pdm run transcribe video.mp4 --skip-analysis\n"
-            "  pdm run transcribe --analyze-only transcript.md --type generic\n"
-            "  pdm run transcribe meeting.mp4 --prompt-file custom_prompt.md\n"
-            "  pdm run transcribe meeting.mp4 --backend faster"
+            "  uv run transcribe video.mp4\n"
+            "  uv run transcribe interview.mov --type interview --language pt\n"
+            "  uv run transcribe video.mp4 --output /path\n"
+            "  uv run transcribe video.mp4 --skip-analysis\n"
+            "  uv run transcribe --analyze-only transcript.md --type generic\n"
+            "  uv run transcribe meeting.mp4 --prompt-file custom_prompt.md\n"
+            "  uv run transcribe meeting.mp4 --backend faster"
         ),
     )
     parser.add_argument(

@@ -1,6 +1,6 @@
 # Transcribe-Diarize
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)]
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)]
 
 Convert video recordings into readable transcripts with speaker labels. Works with interviews, team meetings, and professional conversations.
 
@@ -20,16 +20,16 @@ This tool takes your video file and:
 
 ```bash
 # 1. Install dependencies
-pdm install
+uv sync --group macos
 
 # 2. Create .env file with your HuggingFace token
 echo "HF_ACCESS_TOKEN=hf_your_token_here" > .env
 
 # 3. Run it
-pdm run transcribe meeting.mp4
+uv run transcribe meeting.mp4
 ```
 
-**Requirements:** Apple Silicon Mac, Python 3.11+, PDM (`pip install pdm`), FFmpeg (`brew install ffmpeg`)
+**Requirements:** Apple Silicon Mac, Python 3.11+, UV (`brew install uv`), FFmpeg (`brew install ffmpeg`)
 
 ### Option 2: Docker (Cross-Platform)
 
@@ -65,19 +65,19 @@ TRANSCRIBE_DIARIZE_IMAGE=ghcr.io/joaomj/video-to-text:latest \
 
 ```bash
 # Transcribe with default settings (generic meeting type)
-pdm run transcribe meeting.mp4
+uv run transcribe meeting.mp4
 
 # Job interview analysis
-pdm run transcribe interview.mp4 --type interview
+uv run transcribe interview.mp4 --type interview
 
 # Specify language (default: English)
-pdm run transcribe meeting.mp4 --language pt
+uv run transcribe meeting.mp4 --language pt
 
 # Custom output directory
-pdm run transcribe meeting.mp4 --output ~/Documents/transcripts/
+uv run transcribe meeting.mp4 --output ~/Documents/transcripts/
 
 # Skip AI analysis (transcript only)
-pdm run transcribe meeting.mp4 --skip-analysis
+uv run transcribe meeting.mp4 --skip-analysis
 ```
 
 ### Analysis Only Mode
@@ -85,7 +85,7 @@ pdm run transcribe meeting.mp4 --skip-analysis
 Already have a transcript? Run AI analysis on it:
 
 ```bash
-pdm run transcribe meeting-transcript.md --analyze-only
+uv run transcribe meeting-transcript.md --analyze-only
 ```
 
 ### Custom Analysis Prompts
@@ -102,7 +102,7 @@ Summarize key points from this meeting:
 Then use it:
 
 ```bash
-pdm run transcribe meeting.mp4 --prompt-file custom-prompt.md
+uv run transcribe meeting.mp4 --prompt-file custom-prompt.md
 ```
 
 ## Meeting Types

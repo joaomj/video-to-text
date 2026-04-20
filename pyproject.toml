@@ -1,10 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "transcribe-diarize"
 version = "0.3.0"
 description = "Transcribe and diarize video files (MP4/MOV) with LLM analysis"
 requires-python = ">=3.11"
 dependencies = [
-    "mlx-whisper",
     "pyannote-audio",
     "torch<2.6",
     "torchaudio<2.6",
@@ -18,15 +21,13 @@ dependencies = [
 ]
 
 [project.scripts]
-transcribe = "transcribe_diarize:main"
-transcript-diarize = "transcribe_diarize:main"
+transcribe = "transcribe_diarize_app.cli:main"
+transcript-diarize = "transcribe_diarize_app.cli:main"
 
-[tool.pdm]
-distribution = false
-
-[tool.pdm.scripts]
-transcribe = "python transcribe_diarize.py"
-transcript-diarize = "python transcribe_diarize.py"
+[dependency-groups]
+macos = ["mlx-whisper"]
+dev = ["ruff>=0.15.6"]
+test = ["pytest>=9.0.3"]
 
 [tool.ruff]
 line-length = 100
@@ -34,21 +35,21 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # Pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-    "ARG", # unused arguments
-    "SIM", # simplify
-    "PTH", # use pathlib
-    "ERA", # eradicate (no commented code)
-    "PL",  # Pylint subset
-    "RUF", # Ruff-specific
-    "S",   # bandit security
-    "NPY", # NumPy-specific
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "UP",
+    "ARG",
+    "SIM",
+    "PTH",
+    "ERA",
+    "PL",
+    "RUF",
+    "S",
+    "NPY",
 ]
 
 [tool.ruff.lint.pylint]
@@ -61,11 +62,3 @@ max-complexity = 15
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
-
-[dependency-groups]
-dev = [
-    "ruff>=0.15.6",
-]
-test = [
-    "pytest>=9.0.3",
-]

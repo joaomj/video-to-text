@@ -68,8 +68,8 @@ check_*.py
 !tests/
 !tests/test_*.py
 
-# PDM
-.pdm-python
+# UV
+.venv
 
 # Docker local folders
 input/

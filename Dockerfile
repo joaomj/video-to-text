@@ -1,43 +1,46 @@
 FROM python:3.11-slim AS builder
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    VIRTUAL_ENV=/opt/venv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
-RUN python -m venv "${VIRTUAL_ENV}"
+WORKDIR /app
 
-COPY requirements-docker.txt /tmp/requirements-docker.txt
+COPY pyproject.toml uv.lock ./
 
-RUN pip install --upgrade pip && \
-    pip install -r /tmp/requirements-docker.txt
+RUN uv sync --frozen --no-group macos --no-dev --no-install-project
+
+COPY transcribe_diarize_app/ ./transcribe_diarize_app/
+COPY transcribe_diarize.py ./
+
+RUN uv sync --frozen --no-group macos --no-dev
 
 
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    VIRTUAL_ENV=/opt/venv \
+    PATH="/app/.venv/bin:${PATH}" \
     XDG_CACHE_HOME=/home/transcribe/.cache \
     HF_HOME=/home/transcribe/.cache/huggingface \
-    MPLCONFIGDIR=/home/transcribe/.cache/matplotlib \
-    PATH="/opt/venv/bin:${PATH}"
+    MPLCONFIGDIR=/home/transcribe/.cache/matplotlib
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system transcribe && \
     useradd --system --create-home --gid transcribe transcribe && \
-    mkdir -p /home/transcribe/.cache/huggingface /home/transcribe/.cache/matplotlib /home/transcribe/.cache/torch && \
+    mkdir -p /home/transcribe/.cache/huggingface \
+             /home/transcribe/.cache/matplotlib \
+             /home/transcribe/.cache/torch && \
     chown -R transcribe:transcribe /home/transcribe
 
 WORKDIR /app
 
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/.venv /app/.venv
 COPY --chown=transcribe:transcribe . /app
 
 USER transcribe
 
-ENTRYPOINT ["python", "transcribe_diarize.py"]
+ENTRYPOINT ["transcribe"]

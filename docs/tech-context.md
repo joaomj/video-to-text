@@ -96,7 +96,7 @@ Secret values use Pydantic's `SecretStr` type to prevent accidental logging of A
 ## CLI Interface
 
 ```bash
-pdm run transcribe <input> [options]
+uv run transcribe <input> [options]
 
 Arguments:
   input             Path to video file (MP4/MOV) or transcript (.md/.txt) if --analyze-only
@@ -224,18 +224,20 @@ State-of-the-art speaker diarization with:
 - Prefer `GEMINI_API_KEY`
 - Fallback to `LLM_API_KEY` for backward compatibility
 
-### Why PDM over pip/venv?
+### Why UV over PDM?
 
-**Decision**: Use PDM for dependency management
+**Decision**: Use UV for dependency management
 
 **Pros**:
-- Lock file for reproducible builds
-- PEP 582 local packages (no venv activation)
-- Built-in script runner
+- 10-100x faster dependency resolution and installation
+- Single tool replaces pip, virtualenv, PDM, and pyenv
+- Uses standard `[project.dependencies]` (PEP 621) instead of PDM-specific format
+- Native dependency groups for platform-specific dependencies (macOS vs Linux)
+- Built-in lockfile with universal resolution across platforms
 
 **Cons**:
-- Learning curve for pip users
-- Additional tool dependency
+- UV is relatively new (v0.4+ for dependency groups)
+- Non-UV projects use different conventions
 
 ## Security
 
@@ -259,8 +261,8 @@ State-of-the-art speaker diarization with:
 jobs/
 ├── transcribe_diarize.py        # Compatibility entry point
 ├── transcribe_diarize_app/      # Package modules and backend selection
-├── pyproject.toml               # Native PDM dependencies
-├── requirements-docker.txt      # Docker dependency set without MLX
+├── pyproject.toml               # UV dependencies (cross-platform)
+├── uv.lock                      # Locked dependency versions
 ├── Dockerfile                   # CPU-first container image
 ├── docker-compose.yml           # Local Docker workflow
 ├── docker-compose.ghcr.yml      # Pulled-image workflow with persistent cache
@@ -282,7 +284,7 @@ jobs/
 | "Speakers are labeled wrong" | Pyannote assigns SPEAKER_00/01 arbitrarily | Manual fix in output markdown based on context |
 | Long processing times | Video length + hardware limitations | Normal: 30min video = ~5-10min processing |
 | "It downloads the models every time" | Missing persistent cache volume | Ensure `transcribe-diarize-cache` volume is mounted |
-| "Weights only load failed" (PyTorch) | Compatibility issue with Pyannote 3.4 | Run `pdm sync` to get pinned versions (torch<2.6) |
+| "Weights only load failed" (PyTorch) | Compatibility issue with Pyannote 3.4 | Run `uv sync` to get pinned versions (torch<2.6) |
 
 ## Known Limitations
 
@@ -317,6 +319,7 @@ jobs/
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| 0.4.0 | TBD | UV migration: replaced PDM with UV, dependency groups for macOS, streamlined Docker entrypoint |
 | 0.3.0 | 2026-03-16 | Meeting-agnostic: --type flag, --prompt-file, generic default |
 | 0.2.0 | 2026-02-05 | LLM analysis, progress bars, timing summary |
 | 0.1.1 | 2026-02-04 | Structured logging, PDM migration, expanded docs |

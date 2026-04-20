@@ -6,7 +6,8 @@ on:
       - .github/workflows/publish-image.yml
       - Dockerfile
       - docker-compose*.yml
-      - requirements-docker.txt
+      - pyproject.toml
+      - uv.lock
       - transcribe_diarize.py
       - transcribe_diarize_app/**
   push:
@@ -18,7 +19,8 @@ on:
       - .github/workflows/publish-image.yml
       - Dockerfile
       - docker-compose*.yml
-      - requirements-docker.txt
+      - pyproject.toml
+      - uv.lock
       - transcribe_diarize.py
       - transcribe_diarize_app/**
   workflow_dispatch:

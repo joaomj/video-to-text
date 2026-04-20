@@ -84,7 +84,8 @@ class FasterWhisperTranscriber:
             whisper_module = importlib.import_module("faster_whisper")
         except ImportError as exc:
             raise RuntimeError(
-                "faster-whisper is not installed. Add it with `pdm add faster-whisper`."
+                "faster-whisper is not installed. "
+                "Install it with `uv sync` or `uv add faster-whisper`."
             ) from exc
         whisper_model_type = whisper_module.WhisperModel
 
