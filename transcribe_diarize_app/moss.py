@@ -31,6 +31,15 @@ from .meeting_audio import read_wav_header
 from .settings import Settings
 
 MODEL_ID = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+# Instruction sent to the transcriber with every track. English is the
+# default: the instruction language does not set the transcript language
+# (the default Chinese prompt already returned English transcripts), it
+# only tells the model which format to produce.
+TRANSCRIPTION_PROMPT = (
+    "Transcribe the audio to text. Each segment must start with a start "
+    "timestamp and speaker label ([S01], [S02], [S03], ...), followed by the "
+    "spoken content, and end with an end timestamp marking the speech range."
+)
 # Roughly 130 spoken words per minute plus timestamp markup; scaled by duration
 # so long meetings are transcribed in one pass (the model supports 90 minutes).
 TOKENS_PER_AUDIO_SECOND = 8
@@ -56,7 +65,7 @@ def transcribe_track(audio_wav: Path, settings: Settings) -> list[dict[str, Any]
     device = torch.device(device_name)
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
-    messages = build_transcription_messages(str(audio_wav))
+    messages = build_transcription_messages(str(audio_wav), TRANSCRIPTION_PROMPT)
     _, duration = read_wav_header(audio_wav)
     max_tokens = max(MIN_NEW_TOKENS, int(duration * TOKENS_PER_AUDIO_SECOND))
     logging.getLogger("transformers").setLevel(logging.WARNING)
