@@ -37,5 +37,18 @@ echo "    Qwen3.5-9B (Q4_K_M, ~6 GB) downloads on first server start, then is re
 echo "    Start the summary server with:"
 echo "      llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'"
 
+echo "==> Checking the meet alias..."
+if grep -q "alias meet=" ~/.zshrc 2>/dev/null; then
+  echo "    meet alias already present"
+else
+  cat >> ~/.zshrc << 'ALIAS'
+
+# Meeting Recorder: start capturing on entering a meeting.
+# Usage: meet [--language pt] [--name "planning"] [--mic "External"]
+alias meet='uv run --project $HOME/projects/video-to-text meeting record'
+ALIAS
+  echo "    meet alias added (restart the terminal or run 'source ~/.zshrc')"
+fi
+
 echo ""
-echo "Done. Record with: uv run meeting record   (Ctrl-C stops, processing starts; the summary server starts and stops automatically)"
+echo "Done. Record with: meet   (Ctrl-C stops, processing starts; the summary server starts and stops automatically)"
