@@ -1,10 +1,12 @@
-"""End-to-end proof for `meeting process` with the network faked.
+"""End-to-end proof for `meeting process` with the model and network faked.
 
 Why this test exists: it is the only automated proof that the stages connect —
 normalize, transcribe both tracks, merge speaker labels, write the transcript
 and summary, report the outcome, and resume completed stages. Unit tests on the
-helpers cannot catch wiring or stage-key mistakes. It spends no money and needs
-no vault: HTTP is faked at the httpx boundary and settings carry a dummy key.
+helpers cannot catch wiring or stage-key mistakes. The local MOSS model is
+faked at the transcribe_track boundary (loading 2 GB per test run would be
+absurd); the summary HTTP call is faked at the httpx boundary. No GPU, money,
+or vault needed.
 """
 
 import json
@@ -21,10 +23,10 @@ from transcribe_diarize_app.session import Session
 from transcribe_diarize_app.settings import Settings
 
 SYSTEM_SEGMENTS = [
-    {"start": 0.0, "end": 1.0, "text": "Good morning everyone", "speaker": 0},
-    {"start": 2.0, "end": 3.0, "text": "Let us ship on Friday", "speaker": 1},
+    {"start": 0.0, "end": 1.0, "text": "Good morning everyone", "speaker_raw": "S01"},
+    {"start": 2.0, "end": 3.0, "text": "Let us ship on Friday", "speaker_raw": "S02"},
 ]
-MIC_SEGMENTS = [{"start": 0.0, "end": 1.0, "text": "I agree with Friday"}]
+MIC_SEGMENTS = [{"start": 0.0, "end": 1.0, "text": "I agree with Friday", "speaker_raw": "S01"}]
 SUMMARY_BODY = "## Main points\n- The team agreed to ship on Friday."
 
 
@@ -75,23 +77,27 @@ class FakeResponse:
         return self._payload
 
 
-def fake_post(url: str, **kwargs: object) -> FakeResponse:
-    if url.endswith("/audio/transcriptions"):
-        payload = kwargs.get("json")
-        if not isinstance(payload, dict):
-            raise AssertionError(f"Expected a JSON payload, got: {type(payload)}")
-        if "provider" in payload:
-            return FakeResponse({"segments": SYSTEM_SEGMENTS, "usage": {"cost": 0.0001}})
-        return FakeResponse({"segments": MIC_SEGMENTS})
+def fake_post(url: str, **_: object) -> FakeResponse:
     if url.endswith("/chat/completions"):
         return FakeResponse({"choices": [{"message": {"content": SUMMARY_BODY}}]})
     raise AssertionError(f"Unexpected URL: {url}")
 
 
+def fake_transcribe(audio_wav: object, _settings: object) -> list[dict[str, object]]:
+    name = Path(str(audio_wav)).stem
+    if name.startswith("system"):
+        return [dict(segment) for segment in SYSTEM_SEGMENTS]
+    return [dict(segment) for segment in MIC_SEGMENTS]
+
+
 def run_process(session: Session) -> tuple[object, int]:
     settings = Settings(openrouter_api_key="test-key")  # type: ignore[arg-type]
     options = Options(language="en", meeting_type="generic")
-    with patch("httpx.post", side_effect=fake_post) as post:
+    transcribe_target = "transcribe_diarize_app.meeting_pipeline.transcribe_track"
+    with (
+        patch(transcribe_target, side_effect=fake_transcribe),
+        patch("httpx.post", side_effect=fake_post) as post,
+    ):
         outcome = process_session(session, settings, options)
         return outcome, post.call_count
 

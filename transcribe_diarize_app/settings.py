@@ -20,15 +20,16 @@ class Settings(BaseSettings):
     openrouter_api_key_file: Path | None = None
     # Vault reference used when no key or key file is configured. Empty disables it.
     openrouter_pass_ref: str | None = DEFAULT_OPENROUTER_REF
-    stt_api_key: SecretStr | None = None
-    stt_api_key_file: Path | None = None
     summary_api_key: SecretStr | None = None
     summary_api_key_file: Path | None = None
-    stt_model: str = "microsoft/mai-transcribe-2"
     summary_model: str = "deepseek/deepseek-v4.1-flash-1017"
     summary_reasoning_effort: str = "high"
-    stt_base_url: str = "https://openrouter.ai/api/v1"
     llm_base_url: str = "https://openrouter.ai/api/v1"
+    # Local transcription. Device is auto (CUDA, Apple GPU, then CPU),
+    # or cuda, mps, or cpu. Revision pins the model for remote-code safety.
+    moss_model_id: str = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
+    moss_revision: str | None = None
+    moss_device: str = "auto"
 
     def resolved_openrouter_api_key(self) -> SecretStr | None:
         if self.openrouter_api_key is not None:
@@ -46,13 +47,6 @@ class Settings(BaseSettings):
             return SecretStr(read_pass_ref(reference))
         except RuntimeError as exc:
             raise RuntimeError(f"OPENROUTER_API_KEY is not set and {exc}") from exc
-
-    def resolved_stt_api_key(self) -> SecretStr | None:
-        return (
-            self.stt_api_key
-            or self._secret_from_file(self.stt_api_key_file)
-            or self.resolved_openrouter_api_key()
-        )
 
     def resolved_summary_api_key(self) -> SecretStr | None:
         return (

@@ -24,9 +24,9 @@ meeting process (Python)
     ↓
     FFmpeg: normalize each track → work/<name>-16k.wav (sources untouched)
     ↓
-    OpenRouter STT per track (MP3 chunks, verbose_json timestamps)
-      mic track → labeled "Me" (diarization off)
-      system track → diarized speaker indices → "Remote N"
+    Local MOSS transcription per track (single pass, timestamps plus speakers)
+      mic track → labeled "Me"
+      system track → speaker labels [S01], [S02] → "Remote N"
     ↓
     Drop mic segments that echo remote speech
     ↓
@@ -41,7 +41,7 @@ meeting process (Python)
 |-----------|---------|-------|--------|
 | `recorder/` (Swift) | Capture + health monitoring | Mic, system tap | `mic.wav`, `system.wav`, `session.json`, `recording.log` |
 | `meeting_audio.py` | Normalize to 16 kHz mono, measure signal evidence | Track WAV | `work/*-16k.wav`, activity stats |
-| `stt.py` | OpenRouter / OpenAI-compatible transcription | 16 kHz WAV | Segments with timestamps + speaker ids |
+| `moss.py` | Local transcription (MOSS-Transcribe-Diarize, GPU when available) | 16 kHz WAV | Segments with timestamps + speaker ids |
 | `meeting_pipeline.py` | Stages, merging, completeness, transcript, summary | Session folder | `transcript.md`, `summary.md` |
 | `summary.py` | OpenAI-compatible chat summary | Transcript text | Summary markdown |
 | `vault.py` | Runtime key loading from Proton Pass | `pass://` reference | Key in memory only |
@@ -50,9 +50,8 @@ meeting process (Python)
 ### Speaker Labels
 
 - The mic track is one known speaker: every segment is "Me".
-- The system track is transcribed with diarization enabled
-  (MAI-Transcribe-2 via `provider.options.azure.diarization`). Returned speaker
-  indices map to "Remote 1", "Remote 2", ... in order of first appearance.
+- The system track is transcribed with diarization built in. Returned speaker
+  labels ([S01], [S02]) map to "Remote 1", "Remote 2", ... in order of first appearance.
 - A mic segment overlapping a system segment with similar words is speaker echo
   leaking into the microphone, and is dropped from "Me".
 - Models without diarization (e.g. whisper-turbo) label every remote segment
@@ -73,9 +72,11 @@ See `.env.example`. All settings are environment variables (or a git-ignored
 
 - Key: `OPENROUTER_API_KEY`, `*_FILE`, or vault reference `OPENROUTER_PASS_REF`
   (default `pass://mac-mini/openrouter-macmini-video-to-text/API Key`).
-- Models: `STT_MODEL`, `SUMMARY_MODEL`, `SUMMARY_REASONING_EFFORT`.
-- Endpoints: `STT_BASE_URL`, `LLM_BASE_URL` (OpenRouter by default; any
-  OpenAI-compatible server for local models).
+- Summary model: `SUMMARY_MODEL`, `SUMMARY_REASONING_EFFORT`.
+- Summary endpoint: `LLM_BASE_URL` (OpenRouter by default; any
+  OpenAI-compatible server for local summaries).
+- Transcription: `MOSS_MODEL_ID`, `MOSS_REVISION`, `MOSS_DEVICE`
+  (auto picks CUDA, Apple GPU, then CPU).
 - Language: `MEETING_LANGUAGE` (default `en`); `--language` per run.
 
 ## Session Format
@@ -100,6 +101,41 @@ documents. A file lock prevents two processing runs on one session.
   sparse transcript for the amount of active audio
 - `incomplete` — transcript saved, summary failed (retry with `meeting process`)
 - `failed` — no usable audio or empty transcript; recordings are kept
+
+## Why Local MOSS-Transcribe-Diarize
+
+Transcription runs on this machine instead of a cloud API. One 0.9B model
+(Apache 2.0) returns timestamps plus speaker labels in a single pass, so no
+separate diarization model is needed. GPU is used whenever available (NVIDIA
+CUDA, then Apple GPU, then CPU). Only the summary still uses the cloud.
+
+Options considered (Open ASR Leaderboard word error rates; prices per audio
+hour; this Mac Mini M4 has 16 GB RAM):
+
+| Model | WER | Price | Languages | Timestamps | Speakers | Fits 16 GB |
+|-------|-----|-------|-----------|------------|----------|------------|
+| MOSS-Transcribe-Diarize 0.9B | 5.52 | $0 | 50+ | yes | yes, built in | yes (~2 GB) |
+| Qwen3-ASR-1.7B | 4.95 | $0 | 52 | via companion aligner | no | yes (~3 GB) |
+| Parakeet TDT 0.6B v3 | 5.64 | $0 | 25 European | word plus segment | no | yes (~2 GB) |
+| MAI-Transcribe-2 (cloud) | — | $0.10 | 60 | segment | yes | n/a |
+| Whisper large-v3-turbo | 7.03 | $0.01 cloud / $0 local | 99+ | segment | no | yes |
+| Muse Voice (cloud) | — | $0.18 | 25 | turn only | yes | n/a |
+| Voxtral Mini 3B | 6.4 | $0 | major languages | segment | no | tight (~12 GB) |
+
+Qwen3-ASR wins on accuracy but needs a companion model for timestamps and a
+separate diarization step. Parakeet is the fastest (~92x realtime) with the
+most permissive license (CC-BY-4.0) but also needs diarization. The cloud
+options cost per meeting and send audio off the machine. MOSS is the only
+option that transcribes, timestamps, and separates speakers in one local pass.
+
+Verified on this machine (October 2026): 30 seconds of two-speaker audio
+transcribes word-perfect with a correct speaker split in 9.5 seconds on the
+Apple GPU and 14 seconds on CPU, at zero cost. WER numbers above are
+leaderboard aggregates, not this meeting audio.
+
+For reuse in another project: copy `transcribe_diarize_app/moss.py` and add
+`torch` plus `moss-transcribe-diarize` (GitHub source, PyPI has no release) to
+dependencies. The file documents its own interface.
 
 ## Dependencies
 
@@ -145,7 +181,7 @@ tests/test_hallucinations.py
 | "No OPENROUTER_API_KEY..." | Vault unreachable and no key set | `pass-cli login`, or set `OPENROUTER_API_KEY` |
 | "Recorder not found" | Swift binary not built | `swift build -c release --package-path recorder` |
 | Text without timestamps | Local STT server lacks verbose_json | Use whisper.cpp server for local transcription |
-| One "Remote" label for all | Model has no diarization | Use MAI-Transcribe-2 (default) |
+| First run is slow | Model weights (~2 GB) download once | Later runs reuse the cache |
 
 ## Version History
 

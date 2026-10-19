@@ -16,10 +16,9 @@ from .constants import MEETING_PROMPTS, SUPPORTED_LANGUAGES
 from .hallucinations import is_hallucination
 from .logging_utils import format_timestamp, logger
 from .meeting_audio import measure, normalize, read_wav_header
+from .moss import transcribe_track
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
-from .stt import MAI_MODEL_PREFIX, transcribe_track
-from .stt import MissingApiKeyError as MissingSttKeyError
 from .summary import MissingApiKeyError, summarize
 
 ME = "Me"
@@ -53,7 +52,6 @@ class Outcome:
 class Options:
     language: str
     meeting_type: str
-    stt_model: str | None = None
     summary_model: str | None = None
 
 
@@ -188,19 +186,18 @@ def transcribe_tracks(
     evidence: dict[str, Any],
     outcome: Outcome,
 ) -> list[dict[str, Any]]:
-    stt_model = options.stt_model or settings.stt_model
-
-    def transcribe(name: str, diarize: bool) -> list[dict[str, Any]]:
+    def transcribe(name: str) -> list[dict[str, Any]]:
         audio = session.path(f"work/{name}-16k.wav")
-        segments = transcribe_track(audio, options.language, stt_model, settings, diarize)
+        segments = transcribe_track(audio, settings)
         kept = [s for s in segments if s["text"].strip() and not is_hallucination(s["text"])]
         write_atomic(session.path(f"work/{name}-segments.json"), json.dumps(kept))
         return kept
 
     model_config = {
         "language": options.language,
-        "stt_model": stt_model,
-        "stt_base_url": settings.stt_base_url,
+        "stt_model": settings.moss_model_id,
+        "stt_revision": settings.moss_revision,
+        "device": settings.moss_device,
     }
     per_track: dict[str, list[dict[str, Any]]] = {}
     for name in evidence:
@@ -209,26 +206,18 @@ def transcribe_tracks(
             logger.info("Skipping transcription of %s: no audible audio", name)
             per_track[name] = []
             continue
-        try:
-            runner.run(
-                f"transcribe-{name}",
-                [audio],
-                model_config,
-                [f"work/{name}-segments.json"],
-                lambda name=name: len(transcribe(name, diarize=name == "system")),
-            )
-        except RuntimeError as exc:
-            if isinstance(exc.__cause__, MissingSttKeyError):
-                raise RuntimeError(
-                    "No OPENROUTER_API_KEY (or STT_API_KEY) is configured. "
-                    "Add it to .env, then retry with `meeting process`."
-                ) from exc
-            raise
+        runner.run(
+            f"transcribe-{name}",
+            [audio],
+            model_config,
+            [f"work/{name}-segments.json"],
+            lambda name=name: len(transcribe(name)),
+        )
         per_track[name] = json.loads(session.path(f"work/{name}-segments.json").read_text())
 
     remote = per_track.get("system", [])
     if remote:
-        label_remote(remote, stt_model, outcome)
+        label_remote(remote, outcome)
     for segment in per_track.get("mic", []):
         segment["speaker"] = ME
 
@@ -238,8 +227,8 @@ def transcribe_tracks(
     return merged
 
 
-def label_remote(segments: list[dict[str, Any]], stt_model: str, outcome: Outcome) -> None:
-    """Maps the STT speaker labels to "Remote N" in order of first appearance."""
+def label_remote(segments: list[dict[str, Any]], outcome: Outcome) -> None:
+    """Maps MOSS speaker labels ([S01], [S02]) to "Remote N" in order of first appearance."""
     names: dict[str, str] = {}
     for segment in segments:
         raw = segment.get("speaker_raw")
@@ -248,9 +237,9 @@ def label_remote(segments: list[dict[str, Any]], stt_model: str, outcome: Outcom
         names.setdefault(str(raw), f"{REMOTE} {len(names) + 1}")
         segment["speaker"] = names[str(raw)]
     unlabeled = [s for s in segments if "speaker" not in s]
-    if unlabeled and stt_model.startswith(MAI_MODEL_PREFIX):
+    if unlabeled:
         outcome.degrade(
-            f"{stt_model} did not return speaker labels; remote voices share one label."
+            "MOSS returned segments without speaker labels; those voices share one label."
         )
     for segment in unlabeled:
         segment["speaker"] = REMOTE

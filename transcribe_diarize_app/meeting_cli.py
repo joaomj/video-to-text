@@ -40,11 +40,6 @@ def build_parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--type", "-t", choices=["generic", "interview"], default="generic")
         command.add_argument(
-            "--stt-model",
-            default=os.environ.get("STT_MODEL"),
-            help="Speech-to-text model (default: STT_MODEL or microsoft/mai-transcribe-2)",
-        )
-        command.add_argument(
             "--summary-model",
             default=os.environ.get("SUMMARY_MODEL"),
             help="Summary model (default: SUMMARY_MODEL or deepseek/deepseek-v4.1-flash-1017)",
@@ -140,7 +135,7 @@ def process(directory: Path, args: argparse.Namespace) -> int:
             outcome = process_session(
                 session,
                 settings,
-                Options(args.language, args.type, args.stt_model, args.summary_model),
+                Options(args.language, args.type, args.summary_model),
             )
     except SessionError:
         raise
