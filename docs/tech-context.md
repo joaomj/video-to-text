@@ -115,12 +115,8 @@ System: FFmpeg (audio), Swift 6 toolchain (recorder build), `pass-cli`
 
 ## Distribution
 
-- `Dockerfile` builds a lean image (`meeting` entrypoint) for `meeting process`
-  on recorded sessions. No model downloads; no GPU/torch weight.
-- `docker-compose.yml` (local build) and `docker-compose.ghcr.yml` (prebuilt
-  image) mount `./sessions` and pass the OpenRouter key as a Docker secret.
-- `.github/workflows/publish-image.yml` validates multi-arch builds on PRs and
-  publishes `meeting-recorder` images on `main` pushes and version tags.
+There is no container image. `install.sh` installs Homebrew tools, builds the
+Swift recorder, and syncs the Python environment on macOS.
 
 ## File Structure
 

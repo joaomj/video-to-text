@@ -15,16 +15,13 @@ Record a meeting on your Mac (microphone plus system audio), then get a transcri
 ## Quick Start (macOS)
 
 ```bash
-# 1. Build the recorder (Swift, Apple Silicon Mac)
-swift build -c release --package-path recorder
+# 1. Install everything (Homebrew tools, Swift recorder, Python venv)
+/install.sh
 
-# 2. Install Python dependencies
-uv sync
+# 2. Log in to Proton Pass once (the OpenRouter key loads from the vault at runtime)
+pass-cli login
 
-# 3. The OpenRouter key loads from Proton Pass at runtime (no .env needed):
-#    pass://mac-mini/openrouter-macmini-video-to-text/API Key
-
-# 4. Record; press Ctrl-C at the end and processing starts automatically
+# 3. Record; press Ctrl-C at the end and processing starts automatically
 uv run meeting record
 ```
 
@@ -95,23 +92,6 @@ export SUMMARY_MODEL=qwen3-local
 ```
 
 Note: llama.cpp's transcription endpoint returns text without timestamps, which this tool needs — use whisper.cpp for local speech-to-text.
-
-## Docker
-
-The container runs `meeting process` on sessions recorded elsewhere (recording needs macOS):
-
-```bash
-# 1. Prepare a session folder and the OpenRouter key
-mkdir -p sessions secrets
-printf 'sk-or-v1_...' > secrets/openrouter_api_key.txt
-cp -r ~/Meetings/2026-10-19_153000 sessions/
-
-# 2. Build and process
-docker compose build
-docker compose run --rm meeting process /data/2026-10-19_153000
-```
-
-Or pull the prebuilt image with `docker-compose.ghcr.yml` and `MEETING_RECORDER_IMAGE`.
 
 ## Costs (OpenRouter, defaults)
 
