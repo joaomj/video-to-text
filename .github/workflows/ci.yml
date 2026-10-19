@@ -22,6 +22,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: uv sync --frozen --group test
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: uv run ruff check .
       - run: uv run pytest tests/test_hallucinations.py tests/test_meeting_e2e.py -q
 
