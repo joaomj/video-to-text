@@ -10,8 +10,13 @@ import numpy as np
 TARGET_SAMPLE_RATE = 16_000
 # A one-second block counts as speech-like activity when it is this far above the
 # track's own noise floor (10th percentile of block levels) and above an absolute floor.
+# The adaptive threshold is capped: background louder than the cap is content, not
+# silence, so a loud room or compressed meeting audio cannot hide speech from detection.
 ACTIVITY_ABOVE_FLOOR_DB = 15.0
 ACTIVITY_MIN_DB = -55.0
+ACTIVITY_CAP_DB = -35.0
+# Bump when measurement changes so cached stage results are recomputed.
+MEASURE_VERSION = 1
 NOISE_FLOOR_PERCENTILE = 10
 
 
@@ -73,6 +78,6 @@ def measure(path: Path) -> TrackEvidence:
     rms = np.sqrt(np.mean(blocks**2, axis=1))
     levels = 20 * np.log10(np.maximum(rms, 1e-6))
     floor = float(np.percentile(levels, NOISE_FLOOR_PERCENTILE))
-    threshold = max(floor + ACTIVITY_ABOVE_FLOOR_DB, ACTIVITY_MIN_DB)
+    threshold = max(min(floor + ACTIVITY_ABOVE_FLOOR_DB, ACTIVITY_CAP_DB), ACTIVITY_MIN_DB)
     peak = float(20 * np.log10(max(float(np.max(np.abs(blocks))), 1e-6)))
     return TrackEvidence(duration, int(np.sum(levels > threshold)), floor, peak)

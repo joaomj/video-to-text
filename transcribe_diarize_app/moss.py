@@ -96,12 +96,14 @@ def _load(settings: Settings) -> tuple[Any, Any, str]:
     """Loads the model once per process and reuses it for every track."""
     if _cache.get("model_id") != settings.moss_model_id:
         device_name = select_device(settings.moss_device)
+        settings.moss_cache_dir.mkdir(parents=True, exist_ok=True)
         _cache["model"] = AutoModelForCausalLM.from_pretrained(
             settings.moss_model_id,
             revision=settings.moss_revision,
             trust_remote_code=True,
             dtype="auto",
             attn_implementation="sdpa",
+            cache_dir=str(settings.moss_cache_dir),
         )
         # Apple GPUs and CPUs run float32; NVIDIA runs bfloat16.
         compute_dtype = torch.bfloat16 if device_name == "cuda" else torch.float32
@@ -110,6 +112,7 @@ def _load(settings: Settings) -> tuple[Any, Any, str]:
             settings.moss_model_id,
             revision=settings.moss_revision,
             trust_remote_code=True,
+            cache_dir=str(settings.moss_cache_dir),
         )
         _cache["model_id"] = settings.moss_model_id
         _cache["device"] = device_name

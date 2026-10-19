@@ -18,6 +18,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+import numpy as np
+
+from transcribe_diarize_app.meeting_audio import measure
 from transcribe_diarize_app.meeting_pipeline import Options, process_session
 from transcribe_diarize_app.session import Session
 from transcribe_diarize_app.settings import Settings
@@ -100,6 +103,29 @@ def run_process(session: Session) -> tuple[object, int]:
     ):
         outcome = process_session(session, settings, options)
         return outcome, post.call_count
+
+
+class LoudBackgroundTests(unittest.TestCase):
+    def test_loud_background_is_not_silence(self) -> None:
+        # A loud bed (-25 dBFS noise) with tone bursts: the old floor-relative
+        # detector called this 1s active and the pipeline refused to process it,
+        # although it held real speech. Found on a real meeting recording.
+        rate = 16000
+        rng = np.random.default_rng(7)
+        bed = rng.standard_normal(6 * rate).astype(np.float32)
+        bed *= 0.056 / float(np.sqrt(np.mean(bed**2)))  # -25 dBFS RMS
+        for second in range(6):
+            tone = np.sin(2 * np.pi * 440 * np.arange(rate) / rate) * 0.18
+            bed[second * rate : (second + 1) * rate] += tone.astype(np.float32)
+        frames = (np.clip(bed, -1, 1) * 32767).astype("<i2")
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "loud.wav"
+            with wave.open(str(path), "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(rate)
+                audio.writeframes(frames.tobytes())
+            self.assertGreaterEqual(measure(path).active_seconds, 4)
 
 
 class MeetingEndToEndTests(unittest.TestCase):

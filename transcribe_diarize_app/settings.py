@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     moss_model_id: str = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
     moss_revision: str | None = None
     moss_device: str = "auto"
+    # Persistent weight storage outside ~/.cache, so cache cleanup cannot delete
+    # the ~2 GB download. Overridable with MOSS_CACHE_DIR.
+    moss_cache_dir: Path = Path.home() / ".local" / "share" / "meeting-weights"
 
     def resolved_openrouter_api_key(self) -> SecretStr | None:
         if self.openrouter_api_key is not None:

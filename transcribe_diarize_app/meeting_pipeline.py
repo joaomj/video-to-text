@@ -15,7 +15,7 @@ from typing import Any
 from .constants import MEETING_PROMPTS, SUPPORTED_LANGUAGES
 from .hallucinations import is_hallucination
 from .logging_utils import format_timestamp, logger
-from .meeting_audio import measure, normalize, read_wav_header
+from .meeting_audio import MEASURE_VERSION, measure, normalize, read_wav_header
 from .moss import transcribe_track
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
@@ -71,7 +71,7 @@ def process_session(session: Session, settings: Settings, options: Options) -> O
         evidence = runner.run(
             "normalize",
             [session.path(t["file"]) for t in tracks],
-            {},
+            {"measure_version": MEASURE_VERSION},
             [f"work/{t['name']}-16k.wav" for t in tracks],
             lambda: normalize_tracks(session, tracks),
         )
