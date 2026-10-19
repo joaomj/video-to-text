@@ -12,36 +12,46 @@ leaves the Mac and there is no per-minute cost.
 
 ## Requirements
 
-Apple Silicon Mac, macOS 14.4+, Python 3.11+, UV (`brew install uv`),
-FFmpeg (`brew install ffmpeg`), llama.cpp (`brew install llama.cpp`,
-provides `llama-server`).
+Apple Silicon Mac, macOS 14.4+. Everything else is installed by the setup script.
 
 ## Setup
 
 ```bash
 ./install.sh
-uv run meeting record
 ```
 
-Press Ctrl-C at the end and processing starts automatically. `record` starts
-the local summary server during capture and stops it after processing.
-Output lands in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
+`install.sh` does everything: installs UV, FFmpeg, and llama.cpp via
+Homebrew, builds the Swift recorder, installs the Python environment, and
+adds a `meet` alias to `~/.zshrc`. Model weights (transcription ~2 GB,
+summary ~6 GB) download automatically on first use and are reused after.
+Restart the terminal after setup (or run `source ~/.zshrc`).
 
-For a quick start on entering a meeting, `install.sh` defines a `meet`
-alias (in `~/.zshrc`): `meet` records, `meet --language pt` records in
-Portuguese. English is the default language.
+## Meeting workflow
 
-## Common usage
+Start capturing when the meeting begins:
 
 ```bash
-uv run meeting record --language pt --name "planning"
-uv run meeting record --mic "External" --no-process
-uv run meeting process ~/Meetings/2026-10-19_153000
-uv run meeting status ~/Meetings/2026-10-19_153000
-uv run meeting devices
+meet
 ```
 
-Set `MEETING_LANGUAGE=pt` to change the default language.
+Press Ctrl-C at the end and processing starts automatically: the local
+summary server runs during capture and stops after processing. Output lands
+in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
+
+```bash
+meet --language pt --name "planning"  # Portuguese session with a name
+meet --mic "External" --no-process    # capture only, process later
+```
+
+English is the default language. Set `MEETING_LANGUAGE=pt` to change it.
+
+List microphones, or retry and inspect a session (these work from any folder):
+
+```bash
+uv run --project ~/projects/video-to-text meeting process ~/Meetings/2026-10-19_153000
+uv run --project ~/projects/video-to-text meeting status ~/Meetings/2026-10-19_153000
+uv run --project ~/projects/video-to-text meeting devices
+```
 
 ## Configuration
 

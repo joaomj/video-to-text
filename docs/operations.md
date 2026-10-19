@@ -28,8 +28,9 @@ A run ends as one of:
 ## Recovery
 
 ```bash
-uv run meeting process ~/Meetings/2026-10-19_153000
-uv run meeting status ~/Meetings/2026-10-19_153000
+meet --name "planning"  # record a new session
+uv run --project ~/projects/video-to-text meeting process ~/Meetings/2026-10-19_153000
+uv run --project ~/projects/video-to-text meeting status ~/Meetings/2026-10-19_153000
 ```
 
 Processing resumes from valid completed work. A summary failure leaves the
