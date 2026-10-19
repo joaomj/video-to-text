@@ -1,8 +1,7 @@
-"""Meeting summary generation through an OpenAI-compatible chat API.
+"""Meeting summary generation through a local OpenAI-compatible chat server.
 
-The default endpoint is OpenRouter with DeepSeek Flash and high reasoning effort.
-Point `llm_base_url` at a local server (e.g. llama.cpp server) and set
-`summary_model` to a local model name to summarize offline instead.
+The default endpoint is llama-server on this Mac serving Qwen3.5-9B.
+Start it with: llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080
 """
 
 import time
@@ -18,34 +17,23 @@ RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 REQUEST_TIMEOUT_SECONDS = 300.0
 
 
-class MissingApiKeyError(RuntimeError):
-    pass
-
-
 class RetryableResponseError(RuntimeError):
     pass
 
 
 def summarize(transcript: str, settings: Settings, model: str | None = None) -> str:
     """Returns the summary markdown. Retries transient failures and raises the final error."""
-    api_key = settings.resolved_summary_api_key()
-    if api_key is None:
-        raise MissingApiKeyError(
-            "No OPENROUTER_API_KEY (or SUMMARY_API_KEY) is configured, so no summary was generated."
-        )
     prompt = MEETING_SUMMARY_PROMPT.replace("{transcript}", transcript)
     payload: dict[str, object] = {
         "model": model or settings.summary_model,
         "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 1500,
     }
-    if "openrouter.ai" in settings.llm_base_url:
-        payload["reasoning"] = {"effort": settings.summary_reasoning_effort}
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             response = httpx.post(
                 f"{settings.llm_base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
                 json=payload,
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )

@@ -3,26 +3,24 @@
 All settings are environment variables (or a git-ignored `.env` file) via
 `pydantic-settings`. See `.env.example` for a template.
 
-## Key
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `OPENROUTER_PASS_REF` | `pass://mac-mini/openrouter-macmini-video-to-text/API Key` | Proton Pass reference read at runtime. Empty disables vault loading. |
-| `OPENROUTER_API_KEY` | — | Override: key as a value (not recommended). |
-| `OPENROUTER_API_KEY_FILE` | — | Override: path to a file that holds the key. |
-| `SUMMARY_API_KEY` | — | Summary key override. Falls back to the OpenRouter key. |
-| `SUMMARY_API_KEY_FILE` | — | Summary key file override. |
-
-The key is never logged, never written to disk, and never passed as a
-command-line argument.
-
 ## Summary
 
+The summary runs on this Mac through llama-server. `meeting record` starts
+the server when capture begins, so the model loads during the meeting, and
+stops it after processing ends. `meeting process` does the same around its
+own run. A server that is already listening is reused and left running.
+
+The Q4_K_M weights (~6 GB) download from Hugging Face on the first start
+and are reused after. The server log is `llama-server.log` in the session
+folder, capped at 512 KB.
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SUMMARY_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Summary model. |
-| `SUMMARY_REASONING_EFFORT` | `high` | Reasoning effort for the summary call. |
-| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Chat endpoint. Point at a local OpenAI-compatible server (for example llama.cpp) to summarize offline. |
+| `SUMMARY_MODEL` | `Qwen3.5-9B` | Summary model served by llama-server. |
+| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Local summary server endpoint. |
+| `LLM_HF_REPO` | `unsloth/Qwen3.5-9B-GGUF:Q4_K_M` | Model the server loads on start. |
+| `LLM_CTX_SIZE` | `32768` | Server context size in tokens. |
+| `LLAMA_SERVER_BIN` | — | Server binary override (default: `llama-server` on PATH). |
 
 ## Transcription
 
@@ -39,13 +37,3 @@ command-line argument.
 |----------|---------|---------|
 | `MEETING_LANGUAGE` | `en` | Spoken language (`en` or `pt`). The `--language` flag sets it per run. |
 | `MEETREC_BIN` | — | Recorder binary override. Default is the release build under `recorder/.build`. |
-
-## Offline example
-
-```bash
-export LLM_BASE_URL=http://localhost:8081/v1
-export SUMMARY_MODEL=qwen3-local
-```
-
-Transcription already runs locally. These two settings move the summary
-offline as well.

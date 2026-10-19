@@ -14,7 +14,7 @@ swift build -c release --package-path recorder
 ```
 
 The end-to-end test fakes the model at the `transcribe_track` boundary and
-the summary HTTP call at the `httpx` boundary. No GPU, money, or vault needed.
+the summary HTTP call at the `httpx` boundary. No GPU needed.
 
 ## CI
 

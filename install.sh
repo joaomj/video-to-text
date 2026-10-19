@@ -4,12 +4,12 @@ set -euo pipefail
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-echo "==> Checking Homebrew packages (uv, ffmpeg, proton-pass-cli)..."
+echo "==> Checking Homebrew packages (uv, ffmpeg, llama.cpp)..."
 if ! have brew; then
   echo "error: Homebrew is required: https://brew.sh" >&2
   exit 1
 fi
-for formula in uv ffmpeg proton-pass-cli; do
+for formula in uv ffmpeg llama.cpp; do
   if brew list "$formula" >/dev/null 2>&1; then
     echo "    $formula already installed"
   else
@@ -32,12 +32,10 @@ echo "    recorder: recorder/.build/release/meetrec"
 echo "==> Installing Python dependencies..."
 uv sync
 
-echo "==> Checking Proton Pass session..."
-if pass-cli info >/dev/null 2>&1; then
-  echo "    pass-cli session is active"
-else
-  echo "    no pass-cli session: run 'pass-cli login' once to enable runtime key loading"
-fi
+echo "==> Local summary model..."
+echo "    Qwen3.5-9B (Q4_K_M, ~6 GB) downloads on first server start, then is reused."
+echo "    Start the summary server with:"
+echo "      llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'"
 
 echo ""
-echo "Done. Record with: uv run meeting record   (Ctrl-C stops, processing starts)"
+echo "Done. Record with: uv run meeting record   (Ctrl-C stops, processing starts; the summary server starts and stops automatically)"

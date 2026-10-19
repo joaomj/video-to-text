@@ -19,7 +19,7 @@ from .meeting_audio import MEASURE_VERSION, measure, normalize, read_wav_header
 from .moss import transcribe_track
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
-from .summary import MissingApiKeyError, summarize
+from .summary import summarize
 
 ME = "Me"
 REMOTE = "Remote"
@@ -32,6 +32,10 @@ SPARSE_WORDS_PER_ACTIVE_MINUTE = 30
 MIN_ACTIVE_SECONDS_FOR_SPARSE_CHECK = 30
 MIN_ACTIVE_SECONDS_TOTAL = 5
 
+LOCAL_SERVER_CMD = (
+    "llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M "
+    "--port 8080 --chat-template-kwargs '{\"enable_thinking\": false}'"
+)
 TRANSCRIPT_FILE = "transcript.md"
 SUMMARY_FILE = "summary.md"
 
@@ -323,11 +327,11 @@ def write_summary(
     try:
         runner.run("summary", [transcript], {"model": summary_model}, [SUMMARY_FILE], generate)
     except RuntimeError as exc:
-        cause = exc.__cause__
-        reason = str(cause) if isinstance(cause, MissingApiKeyError) else str(exc)
+        reason = str(exc)
         outcome.status = "incomplete"
         outcome.reasons.append(
-            f"Summary not generated: {reason} The transcript is saved; retry with "
-            f"`meeting process {session.directory}`."
+            f"Summary not generated: {reason} Start the local summary server "
+            f"({LOCAL_SERVER_CMD}), then retry with "
+            f"`meeting process {session.directory}`. The transcript is saved."
         )
         logger.error("Summary not generated: %s", reason)

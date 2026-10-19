@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .constants import SUPPORTED_LANGUAGES
+from .local_llm import run_server
 from .logging_utils import add_file_log, logger
 from .meeting_pipeline import SUMMARY_FILE, TRANSCRIPT_FILE, Options, Outcome, process_session
 from .session import Session, SessionError, processing_lock
@@ -42,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--summary-model",
             default=os.environ.get("SUMMARY_MODEL"),
-            help="Summary model (default: SUMMARY_MODEL or deepseek/deepseek-v4.1-flash-1017)",
+            help="Summary model (default: SUMMARY_MODEL or Qwen3.5-9B)",
         )
 
     record = commands.add_parser("record", help="Record now; process automatically after Ctrl-C")
@@ -102,11 +103,16 @@ def record(args: argparse.Namespace) -> int:
     if args.max_minutes:
         cmd += ["--max-minutes", str(args.max_minutes)]
 
-    # Ctrl-C reaches the whole foreground process group. The recorder handles it by
-    # finalizing its files; this process must survive it to start processing.
+    # The summary server starts while capture runs, so the model loads during
+    # the meeting. It runs in its own process group to survive Ctrl-C, which
+    # the recorder handles by finalizing its files.
     previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        code = subprocess.call(cmd)  # noqa: S603
+        with run_server(settings, directory, wait_ready=False):
+            try:
+                code = subprocess.call(cmd)  # noqa: S603
+            finally:
+                signal.signal(signal.SIGINT, previous)
     finally:
         signal.signal(signal.SIGINT, previous)
 
@@ -130,7 +136,7 @@ def process(directory: Path, args: argparse.Namespace) -> int:
     handler = add_file_log(session.path("processing.log"))
     print(f"\nProcessing session {session.id} (language: {SUPPORTED_LANGUAGES[args.language]})")
     try:
-        with processing_lock(session.directory):
+        with run_server(settings, session.directory), processing_lock(session.directory):
             session = Session(session.directory)  # reload under the lock
             outcome = process_session(
                 session,

@@ -5,8 +5,7 @@ normalize, transcribe both tracks, merge speaker labels, write the transcript
 and summary, report the outcome, and resume completed stages. Unit tests on the
 helpers cannot catch wiring or stage-key mistakes. The local MOSS model is
 faked at the transcribe_track boundary (loading 2 GB per test run would be
-absurd); the summary HTTP call is faked at the httpx boundary. No GPU, money,
-or vault needed.
+absurd); the summary HTTP call is faked at the httpx boundary. No GPU needed.
 """
 
 import json
@@ -94,7 +93,7 @@ def fake_transcribe(audio_wav: object, _settings: object) -> list[dict[str, obje
 
 
 def run_process(session: Session) -> tuple[object, int]:
-    settings = Settings(openrouter_api_key="test-key")  # type: ignore[arg-type]
+    settings = Settings()
     options = Options(language="en", meeting_type="generic")
     transcribe_target = "transcribe_diarize_app.meeting_pipeline.transcribe_track"
     with (

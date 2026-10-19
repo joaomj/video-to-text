@@ -164,7 +164,7 @@ Resolve these choices during implementation without weakening the requirements a
 - Supported macOS versions, Linux audio systems, and capture dependencies.
 - Audio source selection, storage format, and channel layout.
 - Capture-health thresholds, observation windows, and completeness criteria.
-- Processing backends and whether summary generation is local or uses a cloud service.
+- Processing backends for local transcription and local summary generation.
 - Recording retention, output locations, and log rotation.
 
 A graphical interface, live transcription, and automatic meeting detection are not required for this workflow.

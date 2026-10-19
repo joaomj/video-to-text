@@ -6,26 +6,26 @@ Record a meeting on your Mac (microphone plus system audio), then get a
 transcript with speaker labels and a separate meeting summary. No external
 recording app needed.
 
-Transcription runs locally with MOSS-Transcribe-Diarize: no audio leaves the
-Mac and there is no per-minute cost. Only the summary uses the network
-(OpenRouter by default, or any OpenAI-compatible server).
+Transcription and summary both run on this Mac: MOSS-Transcribe-Diarize
+for speech, Qwen3.5-9B through llama-server for the summary. Nothing
+leaves the Mac and there is no per-minute cost.
 
 ## Requirements
 
 Apple Silicon Mac, macOS 14.4+, Python 3.11+, UV (`brew install uv`),
-FFmpeg (`brew install ffmpeg`), `pass-cli` (`brew install proton-pass-cli`,
-logged in once).
+FFmpeg (`brew install ffmpeg`), llama.cpp (`brew install llama.cpp`,
+provides `llama-server`).
 
 ## Setup
 
 ```bash
 ./install.sh
-pass-cli login
 uv run meeting record
 ```
 
-Press Ctrl-C at the end and processing starts automatically. Output lands in
-`~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
+Press Ctrl-C at the end and processing starts automatically. `record` starts
+the local summary server during capture and stops it after processing.
+Output lands in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
 
 ## Common usage
 
@@ -41,15 +41,16 @@ Set `MEETING_LANGUAGE=pt` to change the default language.
 
 ## Configuration
 
-The OpenRouter key loads from Proton Pass at runtime. Full variable reference:
+The summary server runs on this Mac. Full variable reference:
 [docs/configuration.md](docs/configuration.md).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| _(none)_ | `pass://mac-mini/openrouter-macmini-video-to-text/API Key` | Vault reference for the key |
-| `OPENROUTER_API_KEY` | — | Override: key as a value (not recommended) |
-| `SUMMARY_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Summary model |
-| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Local OpenAI-compatible server for offline summaries |
+| `SUMMARY_MODEL` | `Qwen3.5-9B` | Summary model served by llama-server |
+| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Local summary server endpoint |
+| `LLM_HF_REPO` | `unsloth/Qwen3.5-9B-GGUF:Q4_K_M` | Model the server loads on start |
+| `LLM_CTX_SIZE` | `32768` | Server context size in tokens |
+| `LLAMA_SERVER_BIN` | — | Server binary override (default: `llama-server` on PATH) |
 
 ## Docs
 

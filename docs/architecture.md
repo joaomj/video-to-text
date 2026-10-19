@@ -2,8 +2,8 @@
 
 A Swift recorder captures microphone and system audio on macOS. A Python
 pipeline transcribes both tracks locally with MOSS-Transcribe-Diarize,
-merges them into one transcript, and writes a meeting summary through an
-OpenAI-compatible chat model.
+merges them into one transcript, and writes a meeting summary through a
+local chat model (Qwen3.5-9B via llama-server).
 
 ## Data flow
 
@@ -27,7 +27,8 @@ meeting process (Python)
     |
     Merge by timestamp to transcript.md
     |
-    Chat completions summary to summary.md
+    Local chat completions summary to summary.md
+    Summary server stops; llama-server.log stays capped in the session
 ```
 
 ## Components
@@ -38,8 +39,8 @@ meeting process (Python)
 | `meeting_audio.py` | Normalizes tracks to 16 kHz mono and measures signal evidence. |
 | `moss.py` | Local transcription. One 0.9B model returns segments with timestamps plus speaker labels in a single pass. Uses CUDA, then Apple GPU, then CPU. |
 | `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript and summary output. |
-| `summary.py` | Chat summary client (OpenRouter by default, or any OpenAI-compatible server). |
-| `vault.py` | Runtime key loading from Proton Pass. The key stays in memory only. |
+| `summary.py` | Summary client for the local llama-server (Qwen3.5-9B). |
+| `local_llm.py` | Starts llama-server during capture, stops it after processing. |
 | `session.py` | Manifest, stage keys, atomic writes, process lock. |
 | `hallucinations.py` | Noise-segment filter. Uncertain speech is marked `[inaudible]`, never invented. |
 
@@ -63,7 +64,8 @@ runs on one session.
 Transcription runs on this machine. One model transcribes, timestamps, and
 separates speakers in a single local pass, so no audio leaves the Mac and
 there is no per-minute cost. The weights (~2 GB) download from Hugging Face
-on the first run and are reused after. Only the summary uses the network.
+on the first run and are reused after. The summary weights (~6 GB) download
+on the first server start the same way. Nothing leaves the Mac.
 
 For reuse in another project: copy `transcribe_diarize_app/moss.py` and add
 `torch` plus `moss-transcribe-diarize` (GitHub source) to dependencies.
