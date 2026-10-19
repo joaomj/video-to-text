@@ -27,6 +27,10 @@ Press Ctrl-C at the end and processing starts automatically. `record` starts
 the local summary server during capture and stops it after processing.
 Output lands in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
 
+For a quick start on entering a meeting, `install.sh` defines a `meet`
+alias (in `~/.zshrc`): `meet` records, `meet --language pt` records in
+Portuguese. English is the default language.
+
 ## Common usage
 
 ```bash
