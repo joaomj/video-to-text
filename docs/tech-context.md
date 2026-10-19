@@ -1,327 +1,162 @@
-# Transcribe-Diarize System
+# Meeting Recorder System
 
 ## Overview
 
-A CLI tool for transcribing and diarizing video recordings (MP4/MOV format). Extracts audio, identifies speakers, transcribes speech using a pluggable Whisper backend, and optionally analyzes transcripts with an LLM. Native Apple Silicon runs use MLX-Whisper, while Docker and other cross-platform environments use faster-whisper.
+A meeting recorder and processor. A Swift recorder captures microphone and
+system audio on macOS with live capture-health monitoring. A Python pipeline
+then transcribes both tracks through OpenRouter speech-to-text, merges them
+into one transcript, and generates a meeting summary through an
+OpenAI-compatible chat model.
 
 ## Architecture
 
 ### Data Flow
 
 ```
-Input Video (MP4/MOV)
+meetrec record (Swift, macOS)
+    Mic track ──────────────────────► mic.wav (16-bit mono WAV)
+    System tap ─────────────────────► system.wav (16-bit mono WAV)
+    Health monitor ──► terminal warnings + recording.log
+    Ctrl-C ──► finalize + session.json ("recorded")
     ↓
-FFmpeg: Audio Extraction → WAV 16kHz mono
+meeting process (Python)
+    Validate recording (headers, duration, recorder outcome)
     ↓
-Pyannote: Speaker Diarization → Speaker time ranges
+    FFmpeg: normalize each track → work/<name>-16k.wav (sources untouched)
     ↓
-Whisper Backend Selection
-    ├─ MLX-Whisper on Apple Silicon
-    └─ faster-whisper in Docker/cross-platform mode
+    OpenRouter STT per track (MP3 chunks, verbose_json timestamps)
+      mic track → labeled "Me" (diarization off)
+      system track → diarized speaker indices → "Remote N"
     ↓
-Speech-to-Text → Transcript segments with timestamps
+    Drop mic segments that echo remote speech
     ↓
-Alignment: Match speakers to transcript segments by time overlap
+    Merge by timestamp → transcript.md
     ↓
-Markdown Output: {stem}-transcript.md
-    ↓
-LLM Analysis (optional): Gemini 3 Flash Preview via Gemini OpenAI-compatible API
-    ↓
-Analysis Output: {stem}-analysis.md
+    Chat completions summary → summary.md
 ```
 
 ### Components
 
 | Component | Purpose | Input | Output |
 |-----------|---------|-------|--------|
-| `extract_audio()` | FFmpeg wrapper | Video path | WAV file |
-| `process_transcription()` | Core pipeline | Audio path, language, meeting_type | Markdown transcript |
-| `analyze_transcript()` | LLM feedback | Transcript path, meeting_type, prompt_file | Analysis markdown |
-| `is_hallucination()` | Filter Whisper noise | Text segment | Boolean |
+| `recorder/` (Swift) | Capture + health monitoring | Mic, system tap | `mic.wav`, `system.wav`, `session.json`, `recording.log` |
+| `meeting_audio.py` | Normalize to 16 kHz mono, measure signal evidence | Track WAV | `work/*-16k.wav`, activity stats |
+| `stt.py` | OpenRouter / OpenAI-compatible transcription | 16 kHz WAV | Segments with timestamps + speaker ids |
+| `meeting_pipeline.py` | Stages, merging, completeness, transcript, summary | Session folder | `transcript.md`, `summary.md` |
+| `summary.py` | OpenAI-compatible chat summary | Transcript text | Summary markdown |
+| `vault.py` | Runtime key loading from Proton Pass | `pass://` reference | Key in memory only |
+| `session.py` | Manifest, stage keys, atomic writes, process lock | Session folder | Resumable state |
 
-## Meeting Type Templates
+### Speaker Labels
 
-The `MEETING_PROMPTS` constant defines templates for each meeting type:
+- The mic track is one known speaker: every segment is "Me".
+- The system track is transcribed with diarization enabled
+  (MAI-Transcribe-2 via `provider.options.azure.diarization`). Returned speaker
+  indices map to "Remote 1", "Remote 2", ... in order of first appearance.
+- A mic segment overlapping a system segment with similar words is speaker echo
+  leaking into the microphone, and is dropped from "Me".
+- Models without diarization (e.g. whisper-turbo) label every remote segment
+  "Remote" with no separation.
 
-```python
-MEETING_PROMPTS = {
-    "interview": {
-        "initial_prompt": "Job interview conversation.",
-        "analysis_prompt": "...",
-        "transcript_header": "Job Interview Transcript",
-        "analysis_header": "Interview Analysis",
-    },
-    "generic": {
-        "initial_prompt": "Professional meeting conversation.",
-        "analysis_prompt": "...",
-        "transcript_header": "Meeting Transcript",
-        "analysis_header": "Meeting Analysis",
-    },
-}
-```
+### Transcription Chunking
 
-| Template Field | Purpose |
-|----------------|---------|
-| `initial_prompt` | Whisper context hint for better transcription |
-| `analysis_prompt` | LLM prompt for structured analysis |
-| `transcript_header` | Markdown heading for transcript file |
-| `analysis_header` | Markdown heading for analysis file |
-
-**Custom Prompts**: Use `--prompt-file` to override the analysis prompt with a markdown file. The file must contain `{transcript}` placeholder.
+One request per track is tried first (up to 10 minutes of audio). OpenRouter
+limits each request to ~60 seconds of processing time; only on timeout or size
+rejection does the client split into 10-minute MP3 chunks and stitch timestamps
+with offsets. Single requests keep speaker numbering consistent; chunking can
+reset it.
 
 ## Configuration
 
-### Environment Variables (`.env`)
+See `.env.example`. All settings are environment variables (or a git-ignored
+`.env` file) via `pydantic-settings`:
 
-```bash
-HF_ACCESS_TOKEN=hf_xxx           # Required: HuggingFace for Pyannote diarization
-HF_ACCESS_TOKEN_FILE=/run/...    # Optional file-based secret alternative
-GEMINI_API_KEY=xxx               # Optional: Preferred Gemini key for analysis
-GEMINI_API_KEY_FILE=/run/...     # Optional file-based secret alternative
-LLM_API_KEY=xxx                  # Optional: Backward-compatible fallback key
-LLM_API_KEY_FILE=/run/...        # Optional file-based secret alternative
-TRANSCRIPTION_BACKEND=auto       # auto, mlx, or faster
-WHISPER_MODEL=large-v3           # large-v3 by default
-FASTER_WHISPER_DEVICE=cpu        # cpu for Docker CPU images
-FASTER_WHISPER_COMPUTE_TYPE=int8 # smaller CPU footprint for Docker
-```
+- Key: `OPENROUTER_API_KEY`, `*_FILE`, or vault reference `OPENROUTER_PASS_REF`
+  (default `pass://mac-mini/openrouter-macmini-video-to-text/API Key`).
+- Models: `STT_MODEL`, `SUMMARY_MODEL`, `SUMMARY_REASONING_EFFORT`.
+- Endpoints: `STT_BASE_URL`, `LLM_BASE_URL` (OpenRouter by default; any
+  OpenAI-compatible server for local models).
+- Language: `MEETING_LANGUAGE` (default `en`); `--language` per run.
 
-Loaded via `pydantic-settings` with:
-- Type-safe validation
-- File-based secret loading for Docker secrets or mounted secret files
-- UTF-8 encoding
+## Session Format
 
-Secret values use Pydantic's `SecretStr` type to prevent accidental logging of API keys.
+`~/Meetings/<id>/` (or `--out`/`--name`):
 
-## CLI Interface
+- `mic.wav`, `system.wav` — source recordings, never modified after capture
+- `session.json` — manifest: sources, recording outcome, health warnings,
+  processing stages with input-fingerprint keys, final state
+- `work/` — normalized audio, per-track segments, merged segments (resumable)
+- `transcript.md`, `summary.md` — final documents, written atomically
+- `recording.log`, `processing.log` — persistent logs
 
-```bash
-uv run transcribe <input> [options]
+Stage keys hash input file fingerprints plus relevant config, so a rerun skips
+completed stages, resumes interrupted ones, and never duplicates final
+documents. A file lock prevents two processing runs on one session.
 
-Arguments:
-  input             Path to video file (MP4/MOV) or transcript (.md/.txt) if --analyze-only
+## Outcomes
 
-Options:
-  --language, -l    Transcription language (default: en)
-  --output, -o      Output directory (default: current working directory)
-  --type, -t        Meeting type: interview or generic (default: generic)
-  --prompt-file, -p Custom analysis prompt file (markdown)
-  --backend         Transcription backend override: auto, mlx, or faster
-  --skip-analysis   Skip LLM analysis even if API key present
-  --analyze-only    Run only LLM analysis on existing transcript
-```
-
-**Modes:**
-1. **Full Pipeline** (default): Video → Audio → Transcription → Optional Analysis
-2. **Analysis Only** (`--analyze-only`): Existing transcript → LLM Analysis
-
-**Meeting Types:**
-- `interview`: Job interview analysis (strengths, improvements, communication, technical answers)
-- `generic`: General meeting analysis (key topics, decisions, action items, open questions)
-
-**Breaking Change**: Default type changed from `interview` to `generic`. Use `--type interview` for interview-specific analysis.
-
-## Logging
-
-All logs include:
-- **Timestamp**: ISO format (YYYY-MM-DD HH:MM:SS)
-- **Level**: INFO, WARNING, ERROR
-- **Correlation ID**: 8-char UUID per run for traceability
-
-Example:
-```
-2026-02-04 17:23:45 [INFO] [a1b2c3d4] Extracting audio from interview.mp4...
-```
-
-**Implementation Note**: Uses `RunIdFilter` on the root logging handler to inject `run_id` into every log record (including library logs). This ensures external library logs also include the correlation ID.
-
-## Progress Bars and Timing
-
-The script displays progress bars for long-running operations:
-
-| Step | Progress Indicator |
-|------|-------------------|
-| Audio Extraction | Spinner with step name |
-| Diarization | 3-step progress (load audio → create tensor → run model) |
-| Speech Transcription | MLX-Whisper or faster-whisper model progress |
-| Speaker Alignment | Per-segment progress bar |
-| LLM Analysis | Single request progress |
-
-**Timing Summary** displayed at completion:
-```
-==================================================
-TIMING SUMMARY
-==================================================
-  Audio Extraction            2.5s (  3.2%)
-  Speaker Diarization         45.2s ( 58.1%)
-  Speech Transcription        25.1s ( 32.3%)
-  Speaker Alignment            4.8s (  6.2%)
-  LLM Analysis                 0.2s (  0.3%)
-  Writing Output               0.1s (  0.1%)
---------------------------------------------------
-  Script Total                77.9s
-==================================================
-```
-
-Each step shows:
-- **Elapsed time**: Human readable (seconds or minutes)
-- **Percentage**: Of total script time
-- **Completion notification**: Logged when each step finishes
+- `complete` — transcript and summary saved
+- `degraded` — saved, but with capture warnings, missing speaker labels, or a
+  sparse transcript for the amount of active audio
+- `incomplete` — transcript saved, summary failed (retry with `meeting process`)
+- `failed` — no usable audio or empty transcript; recordings are kept
 
 ## Dependencies
 
-| Package | Purpose | Location |
-|---------|---------|----------|
-| `faster-whisper` | Cross-platform Whisper backend for Docker and CPU workflows | `[project.dependencies]` |
-| `pyannote-audio` | Speaker diarization | `[project.dependencies]` |
-| `torch<2.6`/`torchaudio<2.6` | ML framework + audio loading (pinned for compatibility) | `[project.dependencies]` |
-| `huggingface-hub<1.0` | Model download + auth (maintains use_auth_token API) | `[project.dependencies]` |
-| `pydantic-settings` | Type-safe .env handling | `[project.dependencies]` |
-| `httpx` | HTTP client for Zen API | `[project.dependencies]` |
-| `tqdm` | Progress bars for CLI | `[project.dependencies]` |
-| `mlx-whisper` | Apple's MLX-optimized Whisper (M-series Macs) | `[dependency-groups.macos]` |
+| Package | Purpose |
+|---------|---------|
+| `httpx` | OpenRouter / OpenAI-compatible HTTP calls |
+| `numpy` | Audio level measurement |
+| `pydantic` + `pydantic-settings` | Type-safe settings, secret handling |
+| `python-dotenv` | `.env` file loading |
 
-## Decision Log
-
-### Why MLX-Whisper plus faster-whisper?
-
-**Decision**: Use dual local backends.
-
-**Pros**:
-- MLX remains the fastest native option on Apple Silicon
-- faster-whisper enables Docker packaging and cross-platform adoption
-- Both paths keep audio local and avoid API usage costs
-
-**Cons**:
-- Two backend implementations to maintain
-- Docker CPU runs are slower than native MLX on M-series Macs
-
-**Alternative**: OpenAI Whisper API would simplify packaging, but adds ongoing cost and sends audio off-machine.
-
-### Why Pyannote 3.1?
-
-State-of-the-art speaker diarization with:
-- Pre-trained on diverse datasets
-- MPS/CPU device support
-- HuggingFace integration
-
-### Why Gemini 3 Flash Preview for Analysis?
-
-**Decision**: Use `gemini-3-flash-preview` as the default analysis model.
-
-**Reasons for Change**:
-- Current active key is Gemini-based
-- Fast response for long interview transcripts
-- Compatible with OpenAI-style chat completions endpoint used by this script
-
-**Tradeoffs**:
-| Option | Pros | Cons |
-|-------|------|------|
-| Gemini 3 Flash Preview (current) | Fast, low cost, good quality | Output depth may vary on complex prompts |
-| Higher-end LLMs | Potentially richer analysis | Higher cost and/or slower latency |
-
-**Fallback Strategy**:
-- Prefer `GEMINI_API_KEY`
-- Fallback to `LLM_API_KEY` for backward compatibility
-
-### Why UV over PDM?
-
-**Decision**: Use UV for dependency management
-
-**Pros**:
-- 10-100x faster dependency resolution and installation
-- Single tool replaces pip, virtualenv, PDM, and pyenv
-- Uses standard `[project.dependencies]` (PEP 621) instead of PDM-specific format
-- Native dependency groups for platform-specific dependencies (macOS vs Linux)
-- Built-in lockfile with universal resolution across platforms
-
-**Cons**:
-- UV is relatively new (v0.4+ for dependency groups)
-- Non-UV projects use different conventions
-
-## Security
-
-- Secrets via `SecretStr` - never logged
-- `.env` in `.gitignore` (user-managed)
-- Docker Compose uses a file-based HuggingFace secret path instead of embedding secret values in env vars
-- No hardcoded credentials
-- API keys validated but not exposed
+System: FFmpeg (audio), Swift 6 toolchain (recorder build), `pass-cli`
+(logged in once; runtime key loading).
 
 ## Distribution
 
-- `docker-compose.yml` supports local build-and-run development.
-- `docker-compose.ghcr.yml` supports pull-and-run usage against a published GHCR image.
-- `.github/workflows/publish-image.yml` validates multi-arch builds on pull requests and publishes on `main` pushes and version tags.
-- GHCR users persist model downloads in the stable named Docker volume `transcribe-diarize-cache` mounted at `/home/transcribe/.cache`.
-- Whisper and Pyannote weights are intentionally downloaded at runtime instead of being baked into the public image.
-- Docker container uses `transcribe` as entrypoint (not `python transcribe_diarize.py`).
+- `Dockerfile` builds a lean image (`meeting` entrypoint) for `meeting process`
+  on recorded sessions. No model downloads; no GPU/torch weight.
+- `docker-compose.yml` (local build) and `docker-compose.ghcr.yml` (prebuilt
+  image) mount `./sessions` and pass the OpenRouter key as a Docker secret.
+- `.github/workflows/publish-image.yml` validates multi-arch builds on PRs and
+  publishes `meeting-recorder` images on `main` pushes and version tags.
 
 ## File Structure
 
 ```
-jobs/
-├── transcribe_diarize.py        # Compatibility entry point
-├── transcribe_diarize_app/      # Package modules and backend selection
-├── pyproject.toml               # UV dependencies (cross-platform)
-├── uv.lock                      # Locked dependency versions
-├── Dockerfile                   # CPU-first container image
-├── docker-compose.yml           # Local Docker workflow
-├── docker-compose.ghcr.yml      # Pulled-image workflow with persistent cache
-├── .github/workflows/           # GHCR publish automation
-├── .env                         # Secrets (user-managed, git-ignored)
-├── tests/                       # Backend selection and settings tests
-    └── docs/
-        └── tech-context.md          # This file
+recorder/                    # Swift capture tool (meetrec)
+transcribe_diarize_app/      # Python package (meeting command)
+├── meeting_cli.py           # record / process / status / devices
+├── meeting_pipeline.py      # stages, merging, transcript, summary
+├── meeting_audio.py         # normalize + signal evidence
+├── stt.py                   # transcription client (cloud + local)
+├── summary.py               # chat summary client (cloud + local)
+├── vault.py                 # Proton Pass runtime key loading
+├── session.py               # manifest, stage keys, locking
+├── hallucinations.py        # noise-segment filter
+├── constants.py             # languages, prompts, thresholds
+├── settings.py              # env-based configuration
+└── logging_utils.py         # logging with run id + file logs
+tests/test_hallucinations.py
 ```
 
 ## Troubleshooting
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "FFmpeg not found" | FFmpeg not installed or not in PATH | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux) |
-| "HF_ACCESS_TOKEN not found" | Missing or invalid HuggingFace token | Set `HF_ACCESS_TOKEN` in `.env` (local) or `secrets/hf_access_token.txt` (Docker) |
-| "Access to pyannote/speaker-diarization-3.1: GATED" | Model agreement not accepted | Visit https://huggingface.co/pyannote/speaker-diarization-3.1 and click "Access repository" |
-| "GEMINI_API_KEY or LLM_API_KEY not found" | Missing LLM API key | Add key to `.env` or set environment variable |
-| "Speakers are labeled wrong" | Pyannote assigns SPEAKER_00/01 arbitrarily | Manual fix in output markdown based on context |
-| Long processing times | Video length + hardware limitations | Normal: 30min video = ~5-10min processing |
-| "It downloads the models every time" | Missing persistent cache volume | Ensure `transcribe-diarize-cache` volume is mounted |
-| "Weights only load failed" (PyTorch) | Compatibility issue with Pyannote 3.4 | Run `uv sync` to get pinned versions (torch<2.6) |
-
-## Known Limitations
-
-1. **Docker CPU performance**: Cross-platform packaging is slower than native MLX on Apple Silicon
-2. **FFmpeg**: Required system dependency for native runs, bundled in Docker
-3. **HuggingFace**: Requires access token + model permissions
-4. **LLM API**: Optional - analysis skipped without key
-5. **File size**: Large videos may require significant RAM and several GB of model cache
-
-## Bug Fixes & Compatibility
-
-### Recent Fixes (2025-02-05)
-
-1. **PyTorch Compatibility**: Pinned to `torch<2.6` to avoid `weights_only` parameter issues with Pyannote 3.4
-2. **HuggingFace Hub**: Pinned to `huggingface-hub<1.0` to maintain `use_auth_token` compatibility
-3. **Hallucination Filter**: Fixed bug where `is_hallucination()` was comparing word string instead of count
-4. **Diarization API**: Fixed `AttributeError` - `pipeline()` returns `Annotation` directly, not a wrapper object
-
-## Future Improvements
-
-- [x] Progress bars for long operations (v0.2.0)
-- [x] Timing summary per step (v0.2.0)
-- [x] Analysis-only mode for existing transcripts (v0.2.0)
-- [x] LLM analysis integration (v0.2.0)
-- [x] Meeting type templates (v0.3.0)
-- [x] Custom analysis prompts (v0.3.0)
-- [ ] Batch processing multiple videos
-- [ ] Configurable LLM model selection
-- [ ] Export formats (JSON, SRT)
+| "FFmpeg not found" | FFmpeg not installed | `brew install ffmpeg` / `apt-get install ffmpeg` |
+| "No OPENROUTER_API_KEY..." | Vault unreachable and no key set | `pass-cli login`, or set `OPENROUTER_API_KEY` |
+| "Recorder not found" | Swift binary not built | `swift build -c release --package-path recorder` |
+| Text without timestamps | Local STT server lacks verbose_json | Use whisper.cpp server for local transcription |
+| One "Remote" label for all | Model has no diarization | Use MAI-Transcribe-2 (default) |
 
 ## Version History
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| 0.4.0 | TBD | UV migration: replaced PDM with UV, dependency groups for macOS, streamlined Docker entrypoint |
-| 0.3.0 | 2026-03-16 | Meeting-agnostic: --type flag, --prompt-file, generic default |
-| 0.2.0 | 2026-02-05 | LLM analysis, progress bars, timing summary |
-| 0.1.1 | 2026-02-04 | Structured logging, PDM migration, expanded docs |
-| 0.1.0 | 2026-02-02 | Initial release - transcription and diarization |
+| 0.5.0 | 2026-10-19 | OpenRouter STT + summary; Proton Pass runtime key; removed local transcription path and heavy ML dependencies |
+| 0.4.0 | 2026-10 | Meeting recorder (Swift) with capture-health monitoring; session pipeline |
+| 0.3.0 | 2026-03 | Meeting-agnostic transcribe CLI: --type, --prompt-file |
+| 0.2.0 | 2026-02 | LLM analysis, progress bars, timing summary |
+| 0.1.0 | 2026-02 | Initial release - local transcription and diarization |

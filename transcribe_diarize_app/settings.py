@@ -3,6 +3,8 @@ from pathlib import Path
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .vault import DEFAULT_OPENROUTER_REF, read_pass_ref
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -11,34 +13,52 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    hf_access_token: SecretStr | None = None
-    hf_access_token_file: Path | None = None
-    gemini_api_key: SecretStr | None = None
-    gemini_api_key_file: Path | None = None
-    llm_api_key: SecretStr | None = None
-    llm_api_key_file: Path | None = None
-    llm_model: str = "gemini-3-flash-preview"
-    transcription_backend: str = "auto"
-    whisper_model: str = "large-v3"
-    mlx_model_repo: str = "mlx-community/whisper-large-v3-mlx"
-    faster_whisper_device: str = "cpu"
-    faster_whisper_compute_type: str = "int8"
+    meetrec_bin: Path | None = None
+    # OpenRouter (cloud) by default. Point the base URLs at a local OpenAI-compatible
+    # server (e.g. llama.cpp / whisper.cpp) to run local models instead.
+    openrouter_api_key: SecretStr | None = None
+    openrouter_api_key_file: Path | None = None
+    # Vault reference used when no key or key file is configured. Empty disables it.
+    openrouter_pass_ref: str | None = DEFAULT_OPENROUTER_REF
+    stt_api_key: SecretStr | None = None
+    stt_api_key_file: Path | None = None
+    summary_api_key: SecretStr | None = None
+    summary_api_key_file: Path | None = None
+    stt_model: str = "microsoft/mai-transcribe-2"
+    summary_model: str = "deepseek/deepseek-v4.1-flash-1017"
+    summary_reasoning_effort: str = "high"
+    stt_base_url: str = "https://openrouter.ai/api/v1"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
 
-    def resolved_hf_access_token(self) -> SecretStr | None:
-        return self.hf_access_token or self._secret_from_file(self.hf_access_token_file)
+    def resolved_openrouter_api_key(self) -> SecretStr | None:
+        if self.openrouter_api_key is not None:
+            return self.openrouter_api_key
+        try:
+            file_secret = self._secret_from_file(self.openrouter_api_key_file)
+        except RuntimeError:
+            file_secret = None
+        if file_secret is not None:
+            return file_secret
+        reference = self.openrouter_pass_ref or DEFAULT_OPENROUTER_REF
+        if not reference:
+            return None
+        try:
+            return SecretStr(read_pass_ref(reference))
+        except RuntimeError as exc:
+            raise RuntimeError(f"OPENROUTER_API_KEY is not set and {exc}") from exc
 
-    def require_hf_access_token(self) -> SecretStr:
-        token = self.resolved_hf_access_token()
-        if token is None:
-            raise RuntimeError("HF_ACCESS_TOKEN or HF_ACCESS_TOKEN_FILE is required")
-        return token
-
-    def resolved_llm_api_key(self) -> SecretStr | None:
+    def resolved_stt_api_key(self) -> SecretStr | None:
         return (
-            self.gemini_api_key
-            or self._secret_from_file(self.gemini_api_key_file)
-            or self.llm_api_key
-            or self._secret_from_file(self.llm_api_key_file)
+            self.stt_api_key
+            or self._secret_from_file(self.stt_api_key_file)
+            or self.resolved_openrouter_api_key()
+        )
+
+    def resolved_summary_api_key(self) -> SecretStr | None:
+        return (
+            self.summary_api_key
+            or self._secret_from_file(self.summary_api_key_file)
+            or self.resolved_openrouter_api_key()
         )
 
     def _secret_from_file(self, path: Path | None) -> SecretStr | None:

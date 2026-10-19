@@ -8,7 +8,6 @@ on:
       - docker-compose*.yml
       - pyproject.toml
       - uv.lock
-      - transcribe_diarize.py
       - transcribe_diarize_app/**
   push:
     branches:
@@ -21,7 +20,6 @@ on:
       - docker-compose*.yml
       - pyproject.toml
       - uv.lock
-      - transcribe_diarize.py
       - transcribe_diarize_app/**
   workflow_dispatch:
 
@@ -33,7 +31,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_NAME: transcribe-diarize
+  IMAGE_NAME: meeting-recorder
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -105,7 +103,7 @@ jobs:
             type=sha,prefix=sha-
           labels: |
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
-            org.opencontainers.image.description=Meeting transcription and analysis container image
+            org.opencontainers.image.description=Meeting recording transcription container image
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 

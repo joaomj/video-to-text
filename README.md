@@ -1,168 +1,135 @@
-# Transcribe-Diarize
+# Meeting Recorder
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)]
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)]
 
-Convert video recordings into readable transcripts with speaker labels. Works with interviews, team meetings, and professional conversations.
+Record a meeting on your Mac (microphone plus system audio), then get a transcript with speaker labels and a separate meeting summary. No external recording app needed.
 
 ## What It Does
 
-This tool takes your video file and:
+1. **Records** your microphone and everything your Mac plays, as separate tracks
+2. **Warns during the meeting** if a source goes silent, flat, or too quiet
+3. **Transcribes** both tracks via OpenRouter (default: MAI-Transcribe-2, with speaker labels)
+4. **Writes `transcript.md`** with timestamps, "Me" for your mic, "Remote N" for other voices
+5. **Writes `summary.md`** with main points, decisions, action items, and open questions
 
-1. **Extracts the audio** from MP4/MOV files
-2. **Identifies who is speaking** using AI speaker detection
-3. **Transcribes speech to text** with timestamps
-4. **Produces a markdown transcript** with speaker labels
-5. **Optionally analyzes** the content with AI for insights
-
-## Quick Start
-
-### Option 1: Native Apple Silicon (Fastest)
+## Quick Start (macOS)
 
 ```bash
-# 1. Install dependencies
-uv sync --group macos
+# 1. Build the recorder (Swift, Apple Silicon Mac)
+swift build -c release --package-path recorder
 
-# 2. Create .env file with your HuggingFace token
-echo "HF_ACCESS_TOKEN=hf_your_token_here" > .env
+# 2. Install Python dependencies
+uv sync
 
-# 3. Run it
-uv run transcribe meeting.mp4
+# 3. The OpenRouter key loads from Proton Pass at runtime (no .env needed):
+#    pass://mac-mini/openrouter-macmini-video-to-text/API Key
+
+# 4. Record; press Ctrl-C at the end and processing starts automatically
+uv run meeting record
 ```
 
-**Requirements:** Apple Silicon Mac, Python 3.11+, UV (`brew install uv`), FFmpeg (`brew install ffmpeg`)
-
-### Option 2: Docker (Cross-Platform)
-
-```bash
-# 1. Prepare folders and HuggingFace token
-mkdir -p input output secrets
-printf 'hf_your_token_here' > secrets/hf_access_token.txt
-
-# 2. Build and run
-docker compose build
-docker compose run --rm transcribe /data/input/meeting.mp4 --output /data/output
-```
-
-**Requirements:** Docker Desktop or Docker Engine
-
-### Option 3: Prebuilt GHCR Image (No Build)
-
-```bash
-# 1. Prepare folders and token
-mkdir -p input output secrets
-printf 'hf_your_token_here' > secrets/hf_access_token.txt
-
-# 2. Pull and run
-docker pull ghcr.io/joaomj/video-to-text:latest
-TRANSCRIBE_DIARIZE_IMAGE=ghcr.io/joaomj/video-to-text:latest \
-  docker compose -f docker-compose.ghcr.yml run --rm transcribe \
-  /data/input/meeting.mp4 --output /data/output
-```
+**Requirements:** Apple Silicon Mac, macOS 14.4+, Python 3.11+, UV (`brew install uv`), FFmpeg (`brew install ffmpeg`), `pass-cli` (`brew install proton-pass-cli`, logged in once).
 
 ## Usage
 
-### Basic Transcription
-
 ```bash
-# Transcribe with default settings (generic meeting type)
-uv run transcribe meeting.mp4
+# Record with all defaults (English, ~/Meetings)
+uv run meeting record
 
-# Job interview analysis
-uv run transcribe interview.mp4 --type interview
+# Portuguese meeting
+uv run meeting record --language pt
 
-# Specify language (default: English)
-uv run transcribe meeting.mp4 --language pt
+# Pick the headset mic, name the session
+uv run meeting record --mic "External" --name "planning-2026-10-19"
 
-# Custom output directory
-uv run transcribe meeting.mp4 --output ~/Documents/transcripts/
+# Cheaper transcription without speaker separation
+uv run meeting record --stt-model openai/whisper-large-v3-turbo
 
-# Skip AI analysis (transcript only)
-uv run transcribe meeting.mp4 --skip-analysis
+# Record only; process later
+uv run meeting record --no-process
+uv run meeting process ~/Meetings/2026-10-19_153000
+
+# Resume an interrupted run, or check its state
+uv run meeting process ~/Meetings/2026-10-19_153000
+uv run meeting status ~/Meetings/2026-10-19_153000
+
+# List microphones
+uv run meeting devices
 ```
 
-### Analysis Only Mode
+Set `MEETING_LANGUAGE=pt` to change the default language, `STT_MODEL` / `SUMMARY_MODEL` to change models.
 
-Already have a transcript? Run AI analysis on it:
+## Configuration
 
-```bash
-uv run transcribe meeting-transcript.md --analyze-only
-```
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| _(none)_ | `pass://mac-mini/openrouter-macmini-video-to-text/API Key` | OpenRouter key, read from Proton Pass at runtime |
+| `OPENROUTER_API_KEY` | — | Override: key as a value (not recommended) |
+| `OPENROUTER_PASS_REF` | vault reference above | Override the vault reference; empty disables vault loading |
+| `STT_MODEL` | `microsoft/mai-transcribe-2` | Speech-to-text model (`openai/whisper-large-v3-turbo` for ~10x cheaper, no speaker labels) |
+| `SUMMARY_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | Summary model (high reasoning effort) |
+| `STT_BASE_URL` / `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Point at a local OpenAI-compatible server (e.g. whisper.cpp, llama.cpp) to run offline |
 
-### Custom Analysis Prompts
-
-Create a markdown file with `{transcript}` placeholder:
-
-```markdown
-# My Analysis
-
-Summarize key points from this meeting:
-{transcript}
-```
-
-Then use it:
-
-```bash
-uv run transcribe meeting.mp4 --prompt-file custom-prompt.md
-```
-
-## Meeting Types
-
-| Type | Use Case | Analysis Focus |
-|------|----------|----------------|
-| `generic` (default) | Team meetings, discussions | Topics, decisions, action items |
-| `interview` | Job interviews | Strengths, improvements, communication |
+The key is never logged, never written to disk, and never passed as a command-line argument.
 
 ## Output
 
-Two files are generated:
+Each session folder (`~/Meetings/<date>/`) holds:
 
-- `{filename}-transcript.md` - Full transcript with speaker labels and timestamps
-- `{filename}-analysis.md` - AI analysis (if API key provided)
+- `mic.wav` / `system.wav` — the original recordings (kept)
+- `transcript.md` — full transcript with timestamps and speaker labels
+- `summary.md` — main points, decisions, action items with owners/deadlines, open questions
+- `recording.log` / `processing.log` / `session.json` — persistent logs and resumable stage state
 
-### Example Transcript
+A run ends as `complete`, `degraded` (warnings or sparse transcript), `incomplete` (transcript saved, summary failed), or `failed`.
 
-```markdown
-# Meeting Transcript: team-sync
+## Local Models
 
-**[00:15] SPEAKER_00:** Let's start with the project update.
+Both API calls are OpenAI-compatible, so switching to a local server is configuration only:
 
-**[00:22] SPEAKER_01:** We completed the core module yesterday.
+```bash
+export STT_BASE_URL=http://localhost:8080/v1   # whisper.cpp server with verbose_json timestamps
+export LLM_BASE_URL=http://localhost:8081/v1   # llama.cpp server
+export STT_MODEL=whisper-1
+export SUMMARY_MODEL=qwen3-local
 ```
 
-## Requirements
+Note: llama.cpp's transcription endpoint returns text without timestamps, which this tool needs — use whisper.cpp for local speech-to-text.
 
-### API Keys
+## Docker
 
-**HuggingFace Token** (required for speaker detection):
-1. Go to https://huggingface.co/settings/tokens
-2. Create a token with "read" access
-3. Accept the user agreement at https://huggingface.co/pyannote/speaker-diarization-3.1
+The container runs `meeting process` on sessions recorded elsewhere (recording needs macOS):
 
-**Gemini API Key** (optional, for AI analysis):
-- Get a key at https://aistudio.google.com/apikey
+```bash
+# 1. Prepare a session folder and the OpenRouter key
+mkdir -p sessions secrets
+printf 'sk-or-v1_...' > secrets/openrouter_api_key.txt
+cp -r ~/Meetings/2026-10-19_153000 sessions/
 
-### Disk Space
+# 2. Build and process
+docker compose build
+docker compose run --rm meeting process /data/2026-10-19_153000
+```
 
-Models are downloaded on first run (~3-5GB depending on backend) and cached for reuse.
+Or pull the prebuilt image with `docker-compose.ghcr.yml` and `MEETING_RECORDER_IMAGE`.
 
-| Model | Size | Purpose |
-|-------|------|---------|
-| Whisper Large v3 | ~3GB | Speech-to-text transcription |
-| Pyannote Diarization | ~400MB | Speaker identification |
+## Costs (OpenRouter, defaults)
+
+About **$0.10 per hour of audio** for transcription plus a few cents per meeting summary.
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | "FFmpeg not found" | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux) |
-| "HF_ACCESS_TOKEN not found" | Check your `.env` file has the token |
-| "Access to pyannote... GATED" | Visit the HuggingFace model page and click "Access repository" |
-| Speakers labeled wrong | Pyannote assigns SPEAKER_00, SPEAKER_01 arbitrarily. Edit manually. |
-| Slow processing | First run downloads models. Later runs reuse cache. |
+| "No OPENROUTER_API_KEY..." | Run `pass-cli login`, or set `OPENROUTER_API_KEY` |
+| "Recorder not found" | `swift build -c release --package-path recorder` |
+| Remote voices share one label | Expected with whisper-turbo; use the default MAI model for speaker labels |
+| Speakers labeled wrong | MAI assigns voices per request; edit manually |
 
 ## Technical Documentation
 
-For architecture details, API reference, and development information, see [docs/tech-context.md](docs/tech-context.md).
+Architecture, session format, and development notes: [docs/tech-context.md](docs/tech-context.md). Target behavior: [docs/meeting-workflow-requirements.md](docs/meeting-workflow-requirements.md).
 
 ## License
 

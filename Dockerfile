@@ -9,38 +9,31 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync --frozen --no-group macos --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY transcribe_diarize_app/ ./transcribe_diarize_app/
-COPY transcribe_diarize.py ./
 
-RUN uv sync --frozen --no-group macos --no-dev
+RUN uv sync --frozen --no-dev
 
 
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/app/.venv/bin:${PATH}" \
-    XDG_CACHE_HOME=/home/transcribe/.cache \
-    HF_HOME=/home/transcribe/.cache/huggingface \
-    MPLCONFIGDIR=/home/transcribe/.cache/matplotlib
+    PATH="/app/.venv/bin:${PATH}"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/* && \
-    groupadd --system transcribe && \
-    useradd --system --create-home --gid transcribe transcribe && \
-    mkdir -p /home/transcribe/.cache/huggingface \
-             /home/transcribe/.cache/matplotlib \
-             /home/transcribe/.cache/torch && \
-    chown -R transcribe:transcribe /home/transcribe
+    groupadd --system meeting && \
+    useradd --system --create-home --gid meeting meeting
 
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
-COPY --chown=transcribe:transcribe . /app
+COPY --chown=meeting:meeting pyproject.toml uv.lock ./
+COPY --chown=meeting:meeting transcribe_diarize_app/ ./transcribe_diarize_app/
 
-USER transcribe
+USER meeting
 
-ENTRYPOINT ["transcribe"]
+ENTRYPOINT ["meeting"]

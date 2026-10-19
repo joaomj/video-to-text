@@ -1,9 +1,9 @@
 services:
-  transcribe:
+  meeting:
     build:
       context: .
       dockerfile: Dockerfile
-    image: transcribe-diarize:latest
+    image: meeting-recorder:latest
     read_only: true
     tmpfs:
       - /tmp
@@ -12,22 +12,12 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      TRANSCRIPTION_BACKEND: faster
-      WHISPER_MODEL: large-v3
-      FASTER_WHISPER_DEVICE: cpu
-      FASTER_WHISPER_COMPUTE_TYPE: int8
-      HF_ACCESS_TOKEN_FILE: /run/secrets/hf_access_token
+      OPENROUTER_API_KEY_FILE: /run/secrets/openrouter_api_key
     secrets:
-      - hf_access_token
+      - openrouter_api_key
     volumes:
-      - ./input:/data/input:ro
-      - ./output:/data/output
-      - transcribe-diarize-cache:/home/transcribe/.cache
-
-volumes:
-  transcribe-diarize-cache:
-    name: transcribe-diarize-cache
+      - ./sessions:/data
 
 secrets:
-  hf_access_token:
-    file: ./secrets/hf_access_token.txt
+  openrouter_api_key:
+    file: ./secrets/openrouter_api_key.txt
