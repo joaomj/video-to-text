@@ -7,7 +7,7 @@ Apple Silicon Mac, macOS 14.4+, Python 3.11+, UV, FFmpeg, Swift 6 toolchain.
 ## Checks
 
 ```bash
-uv sync
+uv sync --group test
 uv run ruff check .
 uv run pytest tests/test_hallucinations.py tests/test_meeting_e2e.py -q
 swift build -c release --package-path recorder
