@@ -78,4 +78,3 @@ The summary server runs on this Mac. Full variable reference:
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-Copyright (c) 2026 Joao Marcos Visotaky Junior
