@@ -71,12 +71,19 @@ transcribed window by window, so memory stays flat no matter how long the
 meeting runs. Speaker labels are stitched across the overlap, so a label can
 shift between windows.
 
-Measured on a Mac mini (M4, 16 GB) with a real 40-minute meeting:
+Measured on a Mac mini (M4, 16 GB) with the same 40-minute meeting:
 
-| Transcription | Time | Peak memory |
-|---------------|------|-------------|
-| Single pass, whole track | 58.5 min | ~10 GB, swapping |
-| Five-minute windows | **6.4 min** | **1.3 GB** |
+| Transcription approach | Time | Peak memory |
+|------------------------|------|-------------|
+| Single pass, torch | 58.5 min | ~10 GB, swapping |
+| Five-minute windows, torch | ~9 min | 3.4 GB |
+| Whole track, transcribe.cpp (GGUF) | ~7 min | 3.6 GB |
+| Five-minute windows, MLX (`speech`) | **6.4 min** | **1.3 GB** |
+
+The first and last rows ran end to end on this meeting; the middle two are
+extrapolated from measured ten-minute slices. MLX wins on memory, and memory
+no longer grows with meeting length because each window is a separate
+process.
 
 The summary stage is separate: llama-server briefly takes about 8 GB and
 starts only for that stage.
