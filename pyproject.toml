@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meeting-recorder"
-version = "0.7.0"
+version = "0.8.0"
 description = "Record meetings (microphone plus system audio) and transcribe them with OpenRouter"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,13 +13,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.0",
     "python-dotenv",
-    "torch>=2.8",
-    "transformers>=5.6,<6",
-    "moss-transcribe-diarize",
 ]
-
-[tool.uv.sources]
-moss-transcribe-diarize = { git = "https://github.com/OpenMOSS/MOSS-Transcribe-Diarize" }
 
 [project.scripts]
 meeting = "transcribe_diarize_app.meeting_cli:main"

@@ -42,8 +42,7 @@ meeting process (Python)
 |-----------|---------|
 | `recorder/` (Swift) | Capture plus health monitoring. Writes `mic.wav`, `system.wav`, `session.json`, `recording.log`. |
 | `meeting_audio.py` | Normalizes tracks to 16 kHz mono and measures signal evidence. |
-| `speech_cli.py` | Default transcription engine. Runs the `speech` CLI (MOSS through MLX) once per window and parses its report into segments. Keeps generation within a token budget derived from window length. |
-| `moss.py` | Fallback engine (`ASR_ENGINE=torch`). In-process MOSS on CUDA, Apple GPU, or CPU; half precision on GPUs, float32 on CPU. |
+| `speech_cli.py` | Transcription engine. Runs the `speech` CLI (MOSS through MLX) once per window and parses its report into segments. Keeps generation within a token budget derived from window length. |
 | `resources.py` | Machine capacity check before transcription and summary. |
 | `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript and summary output. |
 | `summary.py` | Summary client for the local llama-server (Qwen3.5-9B). |
@@ -75,8 +74,11 @@ there is no per-minute cost.
 Measured on the reference Mac mini (M4, 16 GB) with a real 40-minute meeting:
 
 - Window-by-window MLX transcription: 6.4 minutes for the whole meeting, 1.3 GB peak.
-- Single-pass torch transcription: 58.5 minutes, about 10 GB, and swap.
 - A window with no speech: 7 to 17 seconds, then logged and skipped.
+
+Earlier revisions transcribed a whole track in one pass with torch, which
+took 58.5 minutes, peaked near 10 GB, and pushed the machine into swap. That
+path is removed; the comparison is in the README.
 
 MLX decodes greedily without a repetition guard, so a window full of noise
 makes it repeat timestamp markers until the token budget runs out. That is

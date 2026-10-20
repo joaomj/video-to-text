@@ -13,7 +13,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from . import moss, resources, speech_cli
+from . import resources, speech_cli
 from .constants import MEETING_PROMPTS, SUPPORTED_LANGUAGES
 from .hallucinations import is_hallucination
 from .local_llm import run_server
@@ -27,7 +27,6 @@ from .meeting_audio import (
     read_wav_header,
     split_chunks,
 )
-from .moss import transcribe_track
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
 from .summary import summarize
@@ -101,8 +100,6 @@ def process_session(session: Session, settings: Settings, options: Options) -> O
             [TRANSCRIPT_FILE],
             lambda: write_atomic(transcript_path, render_transcript(session, segments, options)),
         )
-        # The summary model needs the memory the transcription model is holding.
-        moss.release()
         write_summary(session, runner, settings, transcript_path, options, outcome)
     except Exception as exc:
         processing.update({"state": "failed", "outcome": "failed", "error": str(exc)})
@@ -236,15 +233,6 @@ def stitch_speakers(
     return mapping
 
 
-def transcribe_file(path: Path, settings: Settings, language: str) -> list[dict[str, Any]]:
-    """Transcribes one window with the configured engine."""
-    if settings.asr_engine == "torch":
-        return transcribe_track(path, settings)
-    if settings.asr_engine == "speech":
-        return speech_cli.transcribe(path, settings, language=language)
-    raise ValueError(f"Unknown ASR_ENGINE {settings.asr_engine!r}; use 'speech' or 'torch'.")
-
-
 def transcribe_chunked(
     session: Session, name: str, audio: Path, settings: Settings, language: str
 ) -> list[dict[str, Any]]:
@@ -263,7 +251,7 @@ def transcribe_chunked(
             segments = json.loads(checkpoint.read_text(encoding="utf-8"))
             logger.info("Reusing chunk %d from %s", chunk.index + 1, checkpoint.name)
         else:
-            raw = transcribe_file(chunk.path, settings, language)
+            raw = speech_cli.transcribe(chunk.path, settings, language=language)
             segments = [
                 {
                     **segment,
@@ -309,11 +297,8 @@ def transcribe_tracks(
         "language": options.language,
         # Part of the cache key: switching engines must not reuse another
         # engine's transcript.
-        "stt_engine": settings.asr_engine,
-        "speech_model": settings.speech_model if settings.asr_engine == "speech" else None,
-        "stt_model": settings.moss_model_id,
-        "stt_revision": settings.moss_revision,
-        "device": settings.moss_device,
+        "speech_model": settings.speech_model,
+        "speech_backend": settings.speech_backend,
     }
     per_track: dict[str, list[dict[str, Any]]] = {}
     for name in evidence:

@@ -1,9 +1,8 @@
 """Transcription through the `speech` command line tool.
 
-`speech` runs MOSS-Transcribe-Diarize on Apple Silicon through MLX, which is
-markedly lighter than the torch path: roughly 1.3 GB for ten minutes of audio
-against 3.4 GB. It prints a human-readable report rather than JSON, so this
-module owns that format.
+`speech` runs MOSS-Transcribe-Diarize on Apple Silicon through MLX, using
+roughly 1.3 GB for ten minutes of audio. It prints a human-readable report
+rather than JSON, so this module owns that format.
 
 Install with `brew install speech`. The first run downloads quantized weights.
 """
@@ -57,8 +56,7 @@ def binary(settings) -> str:
     found = shutil.which("speech")
     if not found:
         raise SpeechCliError(
-            "The `speech` command is not installed. Install it with `brew install speech`, "
-            "or set ASR_ENGINE=torch to use the local MOSS runtime."
+            "The `speech` command is not installed. Install it with `brew install speech`."
         )
     return found
 

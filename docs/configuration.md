@@ -32,21 +32,11 @@ installed by `install.sh`; on an existing machine install it with
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `ASR_ENGINE` | `speech` | `speech` runs the CLI through MLX; `torch` runs the in-process model. |
 | `SPEECH_BIN` | — | Path to the `speech` binary (default: `speech` on PATH). |
 | `SPEECH_ENGINE` | `moss` | Engine passed to the CLI. |
 | `SPEECH_BACKEND` | `mlx` | CLI backend; `coreml` is the slower alternative. |
 | `SPEECH_MODEL` | `int5` | MOSS weights: `int5` or `int8`. |
 | `SPEECH_TIMEOUT_SECONDS` | `3600` | Per-window timeout. |
-
-The variables below apply only when `ASR_ENGINE=torch`.
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MOSS_MODEL_ID` | `OpenMOSS-Team/MOSS-Transcribe-Diarize` | Transcription model. |
-| `MOSS_REVISION` | — | Pins the model revision for remote-code safety. |
-| `MOSS_DEVICE` | `auto` | `auto` picks CUDA, then Apple GPU, then CPU. Set `cuda`, `mps`, or `cpu` to fix the device. |
-| `MOSS_CACHE_DIR` | `~/.local/share/meeting-weights` | Fallback-engine weights (~1.7 GB), stored outside the cache so cache cleanup cannot delete them. |
 
 ## Recording
 

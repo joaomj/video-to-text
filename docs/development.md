@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Apple Silicon Mac, macOS 14.4+, Python 3.11+, UV, FFmpeg, Swift 6 toolchain.
+Apple Silicon Mac, macOS 14.4+, Python 3.11+, UV, FFmpeg, Swift 6 toolchain, and the `speech` CLI (`brew install speech`).
 
 ## Checks
 
@@ -13,9 +13,8 @@ uv run pytest tests/test_hallucinations.py tests/test_meeting_e2e.py tests/test_
 swift build -c release --package-path recorder
 ```
 
-The end-to-end test pins `ASR_ENGINE=torch` and fakes the model at the
-`transcribe_track` boundary, plus the summary HTTP call at the `httpx`
-boundary. No GPU and no `speech` CLI needed.
+The end-to-end test fakes the `speech` CLI call and the summary HTTP call at
+the `httpx` boundary. It needs no GPU, no weights, and no `speech` binary.
 
 ## CI
 

@@ -28,8 +28,7 @@ A run ends as one of:
 
 ## Machine capacity
 
-Transcription needs about 1.3 GB per window with the default `speech` engine
-and about 2.5 GB with `ASR_ENGINE=torch`. Processing is gated on what the
+Transcription needs about 1.3 GB per window. Processing is gated on what the
 machine can afford. Before transcription the command reads the kernel memory
 pressure, the reclaimable page count, and swap usage, then stops with a
 message when:
@@ -70,5 +69,5 @@ transcript available and reports `incomplete`.
 | "Summary request failed" / connection refused | The summary stage starts the server itself; if it failed, start it manually: `llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'`, then retry `meeting process`. |
 | "Not starting transcription" / "Summary skipped" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
 | "Recorder not found" | `swift build -c release --package-path recorder`, or set `MEETREC_BIN`. |
-| First run is slow | Weights download once, then are reused: ~1 GB for the default `speech` engine, ~1.7 GB for `ASR_ENGINE=torch`, ~6 GB for the summary. |
+| First run is slow | Weights download once, then are reused: ~1 GB for transcription, ~6 GB for the summary. |
 | Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per window and the pipeline stitches labels across overlaps, so one speaker can appear under two labels. Edit the labels by hand in `transcript.md`. |

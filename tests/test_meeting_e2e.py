@@ -4,7 +4,7 @@ Why this test exists: it is the only automated proof that the stages connect —
 normalize, transcribe both tracks, merge speaker labels, write the transcript
 and summary, report the outcome, and resume completed stages. Unit tests on the
 helpers cannot catch wiring or stage-key mistakes. The local MOSS model is
-faked at the transcribe_track boundary (loading 2 GB per test run would be
+faked at the speech CLI boundary (running the model per test would be
 absurd); the summary HTTP call is faked at the httpx boundary. No GPU needed.
 """
 
@@ -85,7 +85,11 @@ def fake_post(url: str, **_: object) -> FakeResponse:
     raise AssertionError(f"Unexpected URL: {url}")
 
 
-def fake_transcribe(audio_wav: object, _settings: object) -> list[dict[str, object]]:
+def fake_transcribe(
+    audio_wav: object,
+    _settings: object,
+    language: str | None = None,  # noqa: ARG001
+) -> list[dict[str, object]]:
     name = Path(str(audio_wav)).stem
     if name.startswith("system"):
         return [dict(segment) for segment in SYSTEM_SEGMENTS]
@@ -95,9 +99,9 @@ def fake_transcribe(audio_wav: object, _settings: object) -> list[dict[str, obje
 def run_process(session: Session) -> tuple[object, int]:
     # The summary stage would start the real llama-server; the summary HTTP
     # call is faked instead, so the server must not be started here.
-    settings = Settings(summary_server_autostart=False, asr_engine="torch")
+    settings = Settings(summary_server_autostart=False)
     options = Options(language="en", meeting_type="generic", force=True)
-    transcribe_target = "transcribe_diarize_app.meeting_pipeline.transcribe_track"
+    transcribe_target = "transcribe_diarize_app.meeting_pipeline.speech_cli.transcribe"
     with (
         patch(transcribe_target, side_effect=fake_transcribe),
         patch("httpx.post", side_effect=fake_post) as post,

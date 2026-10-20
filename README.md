@@ -1,6 +1,6 @@
 # Meeting Recorder
 
-[![CI](https://github.com/joaomj/video-to-text/actions/workflows/ci.yml/badge.svg)]
+[![CI](https://github.com/joaomj/video-to-text/actions/workflows/ci.yml/badge.svg)](https://github.com/joaomj/video-to-text/actions/workflows/ci.yml)
 
 Record a meeting on your Mac (microphone plus system audio), then get a
 transcript with speaker labels and a separate meeting summary. No external
@@ -9,11 +9,12 @@ recording app needed.
 Transcription and summary both run on this Mac: MOSS-Transcribe-Diarize
 through the MLX runtime for speech, Qwen3.5-9B through llama-server for the
 summary. Nothing leaves the Mac and there is no per-minute cost. A 40-minute
-meeting transcribes in about 6.5 minutes with 1.3 GB of memory per window.
+meeting transcribes in about 6.4 minutes with 1.3 GB of memory per window.
 
 ## Requirements
 
-Apple Silicon Mac, macOS 14.4+. Everything else is installed by the setup script.
+Apple Silicon Mac, macOS 14.4+, and the Xcode Command Line Tools (Swift).
+Everything else is installed by the setup script.
 
 ## Setup
 
@@ -54,15 +55,14 @@ meet --language pt --name "planning"  # Portuguese session with a name
 meet --mic "External" --process       # transcribe as soon as you stop
 ```
 
-English is the default language. Set `MEETING_LANGUAGE=pt` to change it.
-
-List microphones, or retry and inspect a session (these work from any folder):
+Inspect a session, or list microphones (these work from any folder):
 
 ```bash
-uv run --project ~/projects/video-to-text meeting process ~/Meetings/2026-10-19_153000
 uv run --project ~/projects/video-to-text meeting status ~/Meetings/2026-10-19_153000
 uv run --project ~/projects/video-to-text meeting devices
 ```
+
+English is the default language. Set `MEETING_LANGUAGE=pt` to change it.
 
 ## Transcription
 
@@ -75,28 +75,27 @@ Measured on a Mac mini (M4, 16 GB) with the same 40-minute meeting:
 
 | Transcription approach | Time | Peak memory |
 |------------------------|------|-------------|
-| Single pass, torch | 58.5 min | ~10 GB, swapping |
-| Five-minute windows, torch | ~9 min | 3.4 GB |
-| Whole track, transcribe.cpp (GGUF) | ~7 min | 3.6 GB |
+| Single pass, torch (rejected) | 58.5 min | ~10 GB, swapping |
+| Five-minute windows, torch (rejected) | ~9 min | 3.4 GB |
+| Whole track, transcribe.cpp (rejected) | ~7 min | 3.6 GB |
 | Five-minute windows, MLX (`speech`) | **6.4 min** | **1.3 GB** |
 
 The first and last rows ran end to end on this meeting; the middle two are
-extrapolated from measured ten-minute slices. MLX wins on memory, and memory
-no longer grows with meeting length because each window is a separate
-process.
+extrapolated from measured ten-minute slices. Only the MLX path ships. It
+wins on memory, and memory no longer grows with meeting length because each
+window is a separate process.
 
 The summary stage is separate: llama-server briefly takes about 8 GB and
 starts only for that stage.
 
-Default engine: the `speech` CLI (MOSS through MLX). Its weights (~1 GB)
-download to `~/Library/Caches/qwen3-speech` on first use. Set `ASR_ENGINE=torch`
-to use the in-process MOSS model instead, which needs `torch` and about 2.5
-times the memory. Windows with no speech produce no output, which is
-expected and logged; a silent window never fails the run.
+Transcription runs through the `speech` CLI (MOSS on MLX). Its weights
+(~1 GB) download to `~/Library/Caches/qwen3-speech` on first use. Windows
+with no speech produce no output, which is expected and logged; a silent
+window never fails the run.
 
 ## Configuration
 
-The summary server runs on this Mac. Full variable reference:
+Summary and transcription settings. Full variable reference:
 [docs/configuration.md](docs/configuration.md).
 
 | Variable | Default | Purpose |
@@ -106,8 +105,8 @@ The summary server runs on this Mac. Full variable reference:
 | `LLM_HF_REPO` | `unsloth/Qwen3.5-9B-GGUF:Q4_K_M` | Model the server loads on start |
 | `LLM_CTX_SIZE` | `32768` | Server context size in tokens |
 | `LLAMA_SERVER_BIN` | — | Server binary override (default: `llama-server` on PATH) |
-| `ASR_ENGINE` | `speech` | Transcription engine: `speech` (MLX) or `torch` |
-| `SPEECH_MODEL` | `int5` | MOSS weights for the `speech` runtime: `int5` or `int8` |
+| `SPEECH_MODEL` | `int5` | MOSS weights: `int5` or `int8` |
+| `SPEECH_BACKEND` | `mlx` | Runtime backend; `coreml` is slower |
 
 ## Docs
 
