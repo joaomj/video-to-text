@@ -34,13 +34,22 @@ Start capturing when the meeting begins:
 meet
 ```
 
-Press Ctrl-C at the end and processing starts automatically: the local
-summary server runs during capture and stops after processing. Output lands
-in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
+Ctrl-C ends the capture. Recording loads no model, so a meeting never
+competes with transcription or summary weights for memory. Process the
+session when the machine is free:
+
+```bash
+uv run --project ~/projects/video-to-text meeting process ~/Meetings/2026-10-19_153000
+```
+
+Output lands in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
+The summary stage starts llama-server for that step only, then stops it.
+Processing refuses to start when the machine is short of memory; see
+[docs/operations.md](docs/operations.md#machine-capacity).
 
 ```bash
 meet --language pt --name "planning"  # Portuguese session with a name
-meet --mic "External" --no-process    # capture only, process later
+meet --mic "External" --process       # transcribe as soon as you stop
 ```
 
 English is the default language. Set `MEETING_LANGUAGE=pt` to change it.

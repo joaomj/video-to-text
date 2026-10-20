@@ -19,7 +19,7 @@ The user must not discover an unusable recording only after processing produces 
 4. The application monitors capture health and reports problems while recording continues.
 5. At the end of the meeting, the user runs a command or sends a documented stop signal.
 6. The application stops recording and finalizes the captured audio.
-7. The application automatically starts the processing stages.
+7. The application records without loading models, and processing starts on request (`meeting process`, or `meet --process`).
 8. The application saves the raw transcript and a separate meeting summary.
 9. The application reports the outcome and the locations of the outputs and persistent logs.
 
@@ -147,7 +147,7 @@ Keep the summary separate from the raw transcript, with both linked to the same 
 - The recording includes microphone speech and system audio without an external recording application.
 - A persistent problem in either capture source produces a warning before the recording ends.
 - Normal pauses do not cause repeated false failure reports.
-- A normal stop automatically starts processing and produces separate transcript and summary documents.
+- A normal stop saves the recording. Processing runs on request and produces separate transcript and summary documents.
 - An interrupted processing run can resume from valid completed work without duplicate final documents.
 - A summary failure leaves the transcript available and produces an explicit incomplete outcome.
 - Missing audio or an almost empty transcript does not produce an unqualified success outcome.

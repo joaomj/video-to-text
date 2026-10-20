@@ -18,6 +18,13 @@ ACTIVITY_CAP_DB = -35.0
 # Bump when measurement changes so cached stage results are recomputed.
 MEASURE_VERSION = 1
 NOISE_FLOOR_PERCENTILE = 10
+# Transcription models expect speech near full scale. Recordings from a distant
+# microphone often peak 20 dB lower, so the level is lifted to a fixed target
+# instead of being handed to the model as captured.
+TARGET_PEAK_DB = -1.0
+MAX_GAIN_DB = 24.0
+# A track this quiet holds no speech worth lifting, only the dither of silence.
+QUIET_PEAK_DB = -60.0
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,50 @@ def normalize(source: Path, destination: Path) -> None:
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"ffmpeg failed on {source.name}: {exc.stderr.strip()}") from exc
     temporary.replace(destination)
+
+
+def apply_gain(path: Path, gain_db: float) -> None:
+    """Raises a 16 kHz mono WAV in place with a static ffmpeg gain."""
+    temporary = path.with_name(f".{path.name}.tmp.wav")
+    cmd = [
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(path),
+        "-af",
+        f"volume={gain_db:.1f}dB",
+        "-ac",
+        "1",
+        "-ar",
+        str(TARGET_SAMPLE_RATE),
+        "-acodec",
+        "pcm_s16le",
+        str(temporary),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)  # noqa: S603
+    except FileNotFoundError as exc:
+        raise RuntimeError("ffmpeg not found. Install it with `brew install ffmpeg`.") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"ffmpeg failed to raise the level of {path.name}: {exc.stderr.strip()}"
+        ) from exc
+    temporary.replace(path)
+
+
+def lift_level(path: Path, evidence: TrackEvidence) -> TrackEvidence:
+    """Brings a quiet track up to the transcription target, then re-measures it."""
+    if evidence.peak_db < QUIET_PEAK_DB:
+        return evidence
+    gain = min(TARGET_PEAK_DB - evidence.peak_db, MAX_GAIN_DB)
+    if gain < 1.0:
+        return evidence
+    apply_gain(path, gain)
+    return measure(path)
 
 
 def measure(path: Path) -> TrackEvidence:

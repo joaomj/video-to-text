@@ -9,8 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from . import resources
 from .constants import SUPPORTED_LANGUAGES
-from .local_llm import run_server
 from .logging_utils import add_file_log, logger
 from .meeting_pipeline import SUMMARY_FILE, TRANSCRIPT_FILE, Options, Outcome, process_session
 from .session import Session, SessionError, processing_lock
@@ -45,15 +45,24 @@ def build_parser() -> argparse.ArgumentParser:
             default=os.environ.get("SUMMARY_MODEL"),
             help="Summary model (default: SUMMARY_MODEL or Qwen3.5-9B)",
         )
+        command.add_argument(
+            "--force",
+            action="store_true",
+            help="Run even when the machine is short of memory or under pressure",
+        )
 
-    record = commands.add_parser("record", help="Record now; process automatically after Ctrl-C")
+    record = commands.add_parser("record", help="Record now; process later with `meeting process`")
     record.add_argument(
         "--out", type=Path, default=DEFAULT_ROOT, help="Sessions folder (default: ~/Meetings)"
     )
     record.add_argument("--name", help="Session folder name (default: date and time)")
     record.add_argument("--mic", help="Microphone name or UID (see `meeting devices`)")
     record.add_argument("--max-minutes", type=float, help="Stop automatically after N minutes")
-    record.add_argument("--no-process", action="store_true", help="Only record")
+    record.add_argument(
+        "--process",
+        action="store_true",
+        help="Process immediately after Ctrl-C instead of waiting for `meeting process`",
+    )
     add_processing_options(record)
 
     process = commands.add_parser("process", help="Process or resume a recorded session")
@@ -103,16 +112,12 @@ def record(args: argparse.Namespace) -> int:
     if args.max_minutes:
         cmd += ["--max-minutes", str(args.max_minutes)]
 
-    # The summary server starts while capture runs, so the model loads during
-    # the meeting. It runs in its own process group to survive Ctrl-C, which
-    # the recorder handles by finalizing its files.
+    # Capture stays deliberately cheap: no models are loaded here, so a meeting
+    # never competes with multi-gigabyte weights for memory. The recorder handles
+    # Ctrl-C and finalizes its files; the parent must not die on that signal.
     previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        with run_server(settings, directory, wait_ready=False):
-            try:
-                code = subprocess.call(cmd)  # noqa: S603
-            finally:
-                signal.signal(signal.SIGINT, previous)
+        code = subprocess.call(cmd)  # noqa: S603
     finally:
         signal.signal(signal.SIGINT, previous)
 
@@ -124,7 +129,7 @@ def record(args: argparse.Namespace) -> int:
             f"The recorder exited with code {code}; processing whatever audio was saved.",
             file=sys.stderr,
         )
-    if args.no_process:
+    if not args.process:
         print(f"\nProcess later with: meeting process {directory}")
         return code
     return process(directory, args)
@@ -136,12 +141,22 @@ def process(directory: Path, args: argparse.Namespace) -> int:
     handler = add_file_log(session.path("processing.log"))
     print(f"\nProcessing session {session.id} (language: {SUPPORTED_LANGUAGES[args.language]})")
     try:
-        with run_server(settings, session.directory), processing_lock(session.directory):
+        capacity = resources.require(
+            resources.TRANSCRIBE_HEADROOM_GB, "transcription", force=args.force
+        )
+    except resources.CapacityError as exc:
+        print(f"\n{exc}", file=sys.stderr)
+        handler.close()
+        return 1
+    logger.info("Machine capacity: %s", capacity.describe())
+    resources.warn_on_load(capacity)
+    try:
+        with processing_lock(session.directory):
             session = Session(session.directory)  # reload under the lock
             outcome = process_session(
                 session,
                 settings,
-                Options(args.language, args.type, args.summary_model),
+                Options(args.language, args.type, args.summary_model, force=args.force),
             )
     except SessionError:
         raise

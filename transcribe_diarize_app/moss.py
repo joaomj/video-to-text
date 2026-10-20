@@ -15,6 +15,7 @@ else is an implementation detail of this file.
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,9 @@ TRANSCRIPTION_PROMPT = (
 # so long meetings are transcribed in one pass (the model supports 90 minutes).
 TOKENS_PER_AUDIO_SECOND = 8
 MIN_NEW_TOKENS = 2048
+# A 40-minute track generates close to 20k tokens; report every 512 so a long
+# pass shows progress instead of a silent gap in the log.
+PROGRESS_TOKEN_STEP = 512
 
 _cache: dict[str, Any] = {}
 
@@ -63,12 +67,32 @@ def transcribe_track(audio_wav: Path, settings: Settings) -> list[dict[str, Any]
     """Transcribes a 16 kHz mono WAV file. Segments carry start/end/text/speaker_raw."""
     model, processor, device_name = _load(settings)
     device = torch.device(device_name)
-    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+    dtype = model.dtype
 
     messages = build_transcription_messages(str(audio_wav), TRANSCRIPTION_PROMPT)
     _, duration = read_wav_header(audio_wav)
     max_tokens = max(MIN_NEW_TOKENS, int(duration * TOKENS_PER_AUDIO_SECOND))
     logging.getLogger("transformers").setLevel(logging.WARNING)
+
+    started = time.monotonic()
+    last_logged = 0
+
+    def report_progress(generated: int) -> None:
+        """Keeps a long single pass observable instead of silent for minutes."""
+        nonlocal last_logged
+        if generated - last_logged < PROGRESS_TOKEN_STEP:
+            return
+        last_logged = generated
+        elapsed = max(time.monotonic() - started, 1e-6)
+        logger.info(
+            "Transcribing %s: %d of ~%d tokens, %.0fs elapsed, %.1f tokens/s",
+            audio_wav.name,
+            generated,
+            max_tokens,
+            elapsed,
+            generated / elapsed,
+        )
+
     result = generate_transcription(
         model,
         processor,
@@ -77,6 +101,7 @@ def transcribe_track(audio_wav: Path, settings: Settings) -> list[dict[str, Any]
         do_sample=False,
         device=device,
         dtype=dtype,
+        token_callback=report_progress,
     )
     segments = []
     for parsed in parse_transcript(result["text"]):
@@ -114,8 +139,13 @@ def _load(settings: Settings) -> tuple[Any, Any, str]:
             attn_implementation="sdpa",
             cache_dir=str(settings.moss_cache_dir),
         )
-        # Apple GPUs and CPUs run float32; NVIDIA runs bfloat16.
-        compute_dtype = torch.bfloat16 if device_name == "cuda" else torch.float32
+        # Half precision halves weights and cache: on a 16 GB Mac the float32
+        # copy of a long meeting is what pushes the machine into swap. CPUs have
+        # no fast float16 path, so they keep float32.
+        compute_dtype = {
+            "cuda": torch.bfloat16,
+            "mps": torch.float16,
+        }.get(device_name, torch.float32)
         _cache["model"] = _cache["model"].to(dtype=compute_dtype).to(device_name).eval()
         _cache["processor"] = AutoProcessor.from_pretrained(
             settings.moss_model_id,
@@ -125,5 +155,5 @@ def _load(settings: Settings) -> tuple[Any, Any, str]:
         )
         _cache["model_id"] = settings.moss_model_id
         _cache["device"] = device_name
-        logger.info("Loaded %s on %s", settings.moss_model_id, device_name)
+        logger.info("Loaded %s on %s (%s)", settings.moss_model_id, device_name, compute_dtype)
     return _cache["model"], _cache["processor"], _cache["device"]

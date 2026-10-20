@@ -25,6 +25,22 @@ A run ends as one of:
   `meeting process`.
 - `failed` — no usable audio or empty transcript. Recordings are kept.
 
+## Machine capacity
+
+Processing is gated on what the machine can afford. Before transcription the
+command reads the kernel memory pressure, the reclaimable page count, and swap
+usage, then stops with a message when:
+
+- memory pressure is `warning` or `critical`, or
+- less than 2.5 GB is reclaimable.
+
+The summary stage needs about 6 GB. When the machine is short, the summary is
+skipped, the session ends as `incomplete`, and the transcript is kept. Close
+applications and re-run `meeting process <dir>` to generate only the summary.
+
+`--force` runs a stage regardless. CPU load is reported (above 1.5 per CPU at a
+terminal) but never blocks a stage.
+
 ## Recovery
 
 ```bash
@@ -41,7 +57,8 @@ transcript available and reports `incomplete`.
 | Problem | Solution |
 |---------|----------|
 | "FFmpeg not found" | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux). |
-| "Summary request failed" / connection refused | The server is auto-started by `record`/`process`; if it failed, start it manually: `llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'`, then retry `meeting process`. |
+| "Summary request failed" / connection refused | The summary stage starts the server itself; if it failed, start it manually: `llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'`, then retry `meeting process`. |
+| "Not starting transcription" / "Summary skipped" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
 | "Recorder not found" | `swift build -c release --package-path recorder`, or set `MEETREC_BIN`. |
 | First run is slow | Model weights (~2 GB) download once, then are reused. |
 | Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per recording; edit manually. |

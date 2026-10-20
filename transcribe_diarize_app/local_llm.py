@@ -1,9 +1,9 @@
 """Lifecycle for the local summary server (llama-server).
 
-`meeting record` starts the server while audio capture runs, so the model
-loads during the meeting instead of delaying processing. The server stops
-after processing ends. A server that is already listening is reused and left
-running. Server output goes to `llama-server.log` in the session folder.
+The summary stage starts the server, so a multi-gigabyte model is never
+resident while a meeting is being recorded or transcribed. The server stops
+when the summary finishes. A server that is already listening is reused and
+left running. Server output goes to `llama-server.log` in the session folder.
 """
 
 import os

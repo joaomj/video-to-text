@@ -18,6 +18,7 @@ meeting process (Python)
     Validate recording (headers, duration, recorder outcome)
     |
     FFmpeg: normalize each track to work/<name>-16k.wav (sources untouched)
+    FFmpeg: lift quiet tracks to -1 dBFS peak, at most +24 dB
     |
     Local MOSS transcription per track (timestamps plus speaker labels)
       mic track maps to "Me"
@@ -28,7 +29,7 @@ meeting process (Python)
     Merge by timestamp to transcript.md
     |
     Local chat completions summary to summary.md
-    Summary server stops; llama-server.log stays capped in the session
+      llama-server starts for this stage and stops after it
 ```
 
 ## Components
@@ -37,10 +38,10 @@ meeting process (Python)
 |-----------|---------|
 | `recorder/` (Swift) | Capture plus health monitoring. Writes `mic.wav`, `system.wav`, `session.json`, `recording.log`. |
 | `meeting_audio.py` | Normalizes tracks to 16 kHz mono and measures signal evidence. |
-| `moss.py` | Local transcription. One 0.9B model returns segments with timestamps plus speaker labels in a single pass. Uses CUDA, then Apple GPU, then CPU. |
+| `moss.py` | Local transcription. One 0.9B model returns segments with timestamps plus speaker labels in a single pass, logging token progress. Uses CUDA, then Apple GPU, then CPU; half precision on GPUs, float32 on CPU. |
 | `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript and summary output. |
 | `summary.py` | Summary client for the local llama-server (Qwen3.5-9B). |
-| `local_llm.py` | Starts llama-server during capture, stops it after processing. |
+| `local_llm.py` | Starts llama-server for the summary stage, stops it afterwards. |
 | `session.py` | Manifest, stage keys, atomic writes, process lock. |
 | `hallucinations.py` | Noise-segment filter. Uncertain speech is marked `[inaudible]`, never invented. |
 

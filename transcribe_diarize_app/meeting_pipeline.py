@@ -7,15 +7,18 @@ from completed work and a repeated run does not duplicate final documents.
 
 import json
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from . import resources
 from .constants import MEETING_PROMPTS, SUPPORTED_LANGUAGES
 from .hallucinations import is_hallucination
+from .local_llm import run_server
 from .logging_utils import format_timestamp, logger
-from .meeting_audio import MEASURE_VERSION, measure, normalize, read_wav_header
+from .meeting_audio import MEASURE_VERSION, lift_level, measure, normalize, read_wav_header
 from .moss import transcribe_track
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
@@ -57,6 +60,7 @@ class Options:
     language: str
     meeting_type: str
     summary_model: str | None = None
+    force: bool = False
 
 
 def process_session(session: Session, settings: Settings, options: Options) -> Outcome:
@@ -169,7 +173,7 @@ def normalize_tracks(session: Session, tracks: list[dict[str, Any]]) -> dict[str
     for track in tracks:
         destination = session.path(f"work/{track['name']}-16k.wav")
         normalize(session.path(track["file"]), destination)
-        stats = measure(destination)
+        stats = lift_level(destination, measure(destination))
         evidence[track["name"]] = stats.__dict__
         logger.info(
             "%s: %.0fs, %ds active, noise floor %.0f dBFS, peak %.0f dBFS",
@@ -320,12 +324,34 @@ def write_summary(
     summary_path = session.path(SUMMARY_FILE)
     summary_model = options.summary_model or settings.summary_model
 
+    capacity = resources.measure()
+    reason = resources.shortfall(capacity, resources.SUMMARY_HEADROOM_GB)
+    if reason and not options.force:
+        outcome.status = "incomplete"
+        outcome.reasons.append(
+            f"Summary skipped: {reason}. Close applications, then run "
+            f"`meeting process {session.directory}` to generate only the summary. "
+            "The transcript is saved."
+        )
+        logger.warning("Summary skipped: %s (%s)", reason, capacity.describe())
+        return
+    logger.info("Summary capacity: %s", capacity.describe())
+
     def generate() -> None:
         body = summarize(transcript.read_text(encoding="utf-8"), settings, summary_model)
         write_atomic(summary_path, f"# Meeting Summary: {session.id}\n\n{body}\n")
 
+    # The summary model is the only stage that needs the LLM server. Loading it
+    # here, and unloading it on exit, keeps capture and transcription free of a
+    # multi-gigabyte resident model.
+    server = (
+        run_server(settings, session.directory)
+        if settings.summary_server_autostart
+        else nullcontext()
+    )
     try:
-        runner.run("summary", [transcript], {"model": summary_model}, [SUMMARY_FILE], generate)
+        with server:
+            runner.run("summary", [transcript], {"model": summary_model}, [SUMMARY_FILE], generate)
     except RuntimeError as exc:
         reason = str(exc)
         outcome.status = "incomplete"
