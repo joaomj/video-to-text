@@ -34,6 +34,6 @@ class Settings(BaseSettings):
     speech_backend: str = "mlx"
     speech_model: str = "int5"
     speech_timeout_seconds: float = 3600.0
-    # Persistent weight storage outside ~/.cache, so cache cleanup cannot delete
-    # the ~2 GB download. Overridable with MOSS_CACHE_DIR.
+    # Fallback-engine weights (~1.7 GB), stored outside ~/.cache so cache
+    # cleanup cannot delete them. Overridable with MOSS_CACHE_DIR.
     moss_cache_dir: Path = Path.home() / ".local" / "share" / "meeting-weights"

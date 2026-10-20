@@ -69,7 +69,7 @@ runs on one session.
 ## Why local MOSS through MLX
 
 Transcription runs on this machine. One model transcribes, timestamps, and
-separates speakers in a single local pass, so no audio leaves the Mac and
+separates speakers in one model pass per window, so no audio leaves the Mac and
 there is no per-minute cost.
 
 Measured on the reference Mac mini (M4, 16 GB) with a real 40-minute meeting:

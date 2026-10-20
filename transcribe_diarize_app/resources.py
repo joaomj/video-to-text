@@ -16,7 +16,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-# A float16 transcription peaks near 3 GB; below this the machine is already
+# A window peaks near 1.3 GB on the default MLX engine and near 3.4 GB with
+# torch; below this the machine is already
 # short of memory before the model is loaded.
 TRANSCRIBE_HEADROOM_GB = 2.5
 # The 9B summary model is ~6 GB of weights plus its cache.

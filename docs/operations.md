@@ -7,7 +7,8 @@ Each run writes to `~/Meetings/<date>/` (or `--out`/`--name`):
 - `mic.wav` / `system.wav` — source recordings, never modified after capture.
 - `session.json` — manifest: sources, recording outcome, health warnings,
   processing stages with input-fingerprint keys, final state.
-- `work/` — normalized audio, per-track segments, merged segments (resumable).
+- `work/` — normalized audio, 5-minute windows (`*-chunk-NN.wav`) with one
+  checkpoint per window, per-track segments, merged segments (resumable).
 - `transcript.md` — full transcript with timestamps and speaker labels.
 - `summary.md` — main points, decisions, action items with owners/deadlines,
   open questions.
@@ -69,5 +70,5 @@ transcript available and reports `incomplete`.
 | "Summary request failed" / connection refused | The summary stage starts the server itself; if it failed, start it manually: `llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'`, then retry `meeting process`. |
 | "Not starting transcription" / "Summary skipped" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
 | "Recorder not found" | `swift build -c release --package-path recorder`, or set `MEETREC_BIN`. |
-| First run is slow | Model weights (~2 GB) download once, then are reused. |
-| Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per recording; edit manually. |
+| First run is slow | Weights download once, then are reused: ~1 GB for the default `speech` engine, ~1.7 GB for `ASR_ENGINE=torch`, ~6 GB for the summary. |
+| Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per window and the pipeline stitches labels across overlaps, so one speaker can appear under two labels. Edit manually, or record with `ASR_ENGINE=torch` and a single pass. |

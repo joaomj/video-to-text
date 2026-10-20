@@ -88,7 +88,8 @@ process.
 The summary stage is separate: llama-server briefly takes about 8 GB and
 starts only for that stage.
 
-Default engine: the `speech` CLI (MOSS through MLX). Set `ASR_ENGINE=torch`
+Default engine: the `speech` CLI (MOSS through MLX). Its weights (~1 GB)
+download to `~/Library/Caches/qwen3-speech` on first use. Set `ASR_ENGINE=torch`
 to use the in-process MOSS model instead, which needs `torch` and about 2.5
 times the memory. Windows with no speech produce no output, which is
 expected and logged; a silent window never fails the run.

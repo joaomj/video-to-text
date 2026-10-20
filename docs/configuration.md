@@ -27,7 +27,8 @@ folder, capped at 512 KB.
 
 The default engine is the `speech` CLI, which runs MOSS through MLX. It is
 installed by `install.sh`; on an existing machine install it with
-`brew install speech`. The int5 weights (~1 GB) download on first use.
+`brew install speech`. The int5 weights (~1 GB) download on first use to
+`~/Library/Caches/qwen3-speech/models/aufklarer/`.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -45,7 +46,7 @@ The variables below apply only when `ASR_ENGINE=torch`.
 | `MOSS_MODEL_ID` | `OpenMOSS-Team/MOSS-Transcribe-Diarize` | Transcription model. |
 | `MOSS_REVISION` | — | Pins the model revision for remote-code safety. |
 | `MOSS_DEVICE` | `auto` | `auto` picks CUDA, then Apple GPU, then CPU. Set `cuda`, `mps`, or `cpu` to fix the device. |
-| `MOSS_CACHE_DIR` | `~/.local/share/meeting-weights` | Weight storage outside the cache, so cache cleanup cannot delete the ~2 GB download. |
+| `MOSS_CACHE_DIR` | `~/.local/share/meeting-weights` | Fallback-engine weights (~1.7 GB), stored outside the cache so cache cleanup cannot delete them. |
 
 ## Recording
 
