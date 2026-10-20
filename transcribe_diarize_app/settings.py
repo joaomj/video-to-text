@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     moss_model_id: str = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
     moss_revision: str | None = None
     moss_device: str = "auto"
+    # Transcription engine: "speech" drives the MLX runtime installed by
+    # `brew install speech`; "torch" keeps the in-process MOSS model.
+    asr_engine: str = "speech"
+    speech_bin: Path | None = None
+    speech_engine: str = "moss"
+    speech_backend: str = "mlx"
+    speech_model: str = "int5"
+    speech_timeout_seconds: float = 3600.0
     # Persistent weight storage outside ~/.cache, so cache cleanup cannot delete
     # the ~2 GB download. Overridable with MOSS_CACHE_DIR.
     moss_cache_dir: Path = Path.home() / ".local" / "share" / "meeting-weights"

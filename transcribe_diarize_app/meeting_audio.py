@@ -21,6 +21,12 @@ NOISE_FLOOR_PERCENTILE = 10
 # Transcription models expect speech near full scale. Recordings from a distant
 # microphone often peak 20 dB lower, so the level is lifted to a fixed target
 # instead of being handed to the model as captured.
+# Transcription cost grows with context: a 40-minute single pass ran at 4
+# tokens/s, while a 5-minute window ran at 32. Each window keeps the model in
+# its fast regime. The overlap gives the next window enough shared speech to
+# match speaker labels across the boundary.
+CHUNK_SECONDS = 300
+OVERLAP_SECONDS = 30
 TARGET_PEAK_DB = -1.0
 MAX_GAIN_DB = 24.0
 # A track this quiet holds no speech worth lifting, only the dither of silence.
@@ -71,6 +77,64 @@ def normalize(source: Path, destination: Path) -> None:
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"ffmpeg failed on {source.name}: {exc.stderr.strip()}") from exc
     temporary.replace(destination)
+
+
+@dataclass(frozen=True)
+class Chunk:
+    index: int
+    start: float
+    path: Path
+    # True when the window holds no second above the activity floor. Sending
+    # such a window to the model makes it repeat itself until the token cap.
+    silent: bool = False
+
+    @property
+    def own_end(self) -> float:
+        """End of the audio this chunk owns, excluding the next chunk's overlap."""
+        return self.start + CHUNK_SECONDS - OVERLAP_SECONDS
+
+
+def split_chunks(source: Path, directory: Path, name: str) -> list[Chunk]:
+    """Cuts a track into overlapping windows for transcription."""
+    duration = read_wav_header(source)[1]
+    stride = CHUNK_SECONDS - OVERLAP_SECONDS
+    directory.mkdir(parents=True, exist_ok=True)
+    chunks: list[Chunk] = []
+    index = 0
+    while index * stride < duration:
+        start = index * stride
+        path = directory / f"{name}-chunk-{index:02d}.wav"
+        cmd = [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            f"{start}",
+            "-t",
+            f"{CHUNK_SECONDS}",
+            "-i",
+            str(source),
+            "-ac",
+            "1",
+            "-ar",
+            str(TARGET_SAMPLE_RATE),
+            "-acodec",
+            "pcm_s16le",
+            str(path),
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)  # noqa: S603
+        except FileNotFoundError as exc:
+            raise RuntimeError("ffmpeg not found. Install it with `brew install ffmpeg`.") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"ffmpeg failed to cut {source.name}: {exc.stderr.strip()}") from exc
+        silent = measure(path).active_seconds == 0
+        chunks.append(Chunk(index=index, start=start, path=path, silent=silent))
+        index += 1
+    return chunks
 
 
 def apply_gain(path: Path, gain_db: float) -> None:

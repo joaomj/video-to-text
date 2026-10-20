@@ -13,8 +13,9 @@ uv run pytest tests/test_hallucinations.py tests/test_meeting_e2e.py -q
 swift build -c release --package-path recorder
 ```
 
-The end-to-end test fakes the model at the `transcribe_track` boundary and
-the summary HTTP call at the `httpx` boundary. No GPU needed.
+The end-to-end test pins `ASR_ENGINE=torch` and fakes the model at the
+`transcribe_track` boundary, plus the summary HTTP call at the `httpx`
+boundary. No GPU and no `speech` CLI needed.
 
 ## CI
 
@@ -30,9 +31,9 @@ verifies the checks above, then creates the GitHub release with
 automatically generated notes (categories in `.github/release.yml`).
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
-gh release view v0.5.0
+git tag v0.7.0
+git push origin v0.7.0
+gh release view v0.7.0
 ```
 
 Version the package in `pyproject.toml` before tagging.

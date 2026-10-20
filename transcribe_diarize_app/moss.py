@@ -14,7 +14,9 @@ Only `transcribe_track` and `select_device` are the public surface; everything
 else is an implementation detail of this file.
 """
 
+import gc
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -45,9 +47,9 @@ TRANSCRIPTION_PROMPT = (
 # so long meetings are transcribed in one pass (the model supports 90 minutes).
 TOKENS_PER_AUDIO_SECOND = 8
 MIN_NEW_TOKENS = 2048
-# A 40-minute track generates close to 20k tokens; report every 512 so a long
-# pass shows progress instead of a silent gap in the log.
-PROGRESS_TOKEN_STEP = 512
+# Audio encoding produces no tokens, so a token-counted report leaves the log
+# silent for minutes. A heartbeat covers both phases.
+PROGRESS_INTERVAL_SECONDS = 30.0
 
 _cache: dict[str, Any] = {}
 
@@ -75,33 +77,45 @@ def transcribe_track(audio_wav: Path, settings: Settings) -> list[dict[str, Any]
     logging.getLogger("transformers").setLevel(logging.WARNING)
 
     started = time.monotonic()
-    last_logged = 0
+    generated_tokens = 0
+    finished = threading.Event()
 
-    def report_progress(generated: int) -> None:
-        """Keeps a long single pass observable instead of silent for minutes."""
-        nonlocal last_logged
-        if generated - last_logged < PROGRESS_TOKEN_STEP:
-            return
-        last_logged = generated
-        elapsed = max(time.monotonic() - started, 1e-6)
-        logger.info(
-            "Transcribing %s: %d of ~%d tokens, %.0fs elapsed, %.1f tokens/s",
-            audio_wav.name,
-            generated,
-            max_tokens,
-            elapsed,
-            generated / elapsed,
+    def report_tokens(generated: int) -> None:
+        nonlocal generated_tokens
+        generated_tokens = generated
+
+    def heartbeat() -> None:
+        while not finished.wait(PROGRESS_INTERVAL_SECONDS):
+            elapsed = time.monotonic() - started
+            phase = (
+                f"{generated_tokens} of ~{max_tokens} tokens"
+                if generated_tokens
+                else "encoding audio"
+            )
+            logger.info("Transcribing %s: %s, %.0fs elapsed", audio_wav.name, phase, elapsed)
+
+    logger.info("Transcribing %s: %.0fs of audio", audio_wav.name, duration)
+    monitor = threading.Thread(target=heartbeat, name="transcribe-progress", daemon=True)
+    monitor.start()
+    try:
+        result = generate_transcription(
+            model,
+            processor,
+            messages,
+            max_new_tokens=max_tokens,
+            do_sample=False,
+            device=device,
+            dtype=dtype,
+            token_callback=report_tokens,
         )
-
-    result = generate_transcription(
-        model,
-        processor,
-        messages,
-        max_new_tokens=max_tokens,
-        do_sample=False,
-        device=device,
-        dtype=dtype,
-        token_callback=report_progress,
+    finally:
+        finished.set()
+        monitor.join(timeout=PROGRESS_INTERVAL_SECONDS)
+    logger.info(
+        "Transcribed %s: %d tokens in %.0fs",
+        audio_wav.name,
+        generated_tokens,
+        time.monotonic() - started,
     )
     segments = []
     for parsed in parse_transcript(result["text"]):
@@ -124,6 +138,17 @@ def transcribe_track(audio_wav: Path, settings: Settings) -> list[dict[str, Any]
         len(segments),
     )
     return segments
+
+
+def release() -> None:
+    """Drops the model and returns its GPU memory before the next stage runs."""
+    if not _cache:
+        return
+    _cache.clear()
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    logger.info("Released the transcription model")
 
 
 def _load(settings: Settings) -> tuple[Any, Any, str]:

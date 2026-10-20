@@ -4,12 +4,12 @@ set -euo pipefail
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-echo "==> Checking Homebrew packages (uv, ffmpeg, llama.cpp)..."
+echo "==> Checking Homebrew packages (uv, ffmpeg, llama.cpp, speech)..."
 if ! have brew; then
   echo "error: Homebrew is required: https://brew.sh" >&2
   exit 1
 fi
-for formula in uv ffmpeg llama.cpp; do
+for formula in uv ffmpeg llama.cpp speech; do
   if brew list "$formula" >/dev/null 2>&1; then
     echo "    $formula already installed"
   else

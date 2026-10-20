@@ -13,12 +13,20 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from . import resources
+from . import moss, resources, speech_cli
 from .constants import MEETING_PROMPTS, SUPPORTED_LANGUAGES
 from .hallucinations import is_hallucination
 from .local_llm import run_server
 from .logging_utils import format_timestamp, logger
-from .meeting_audio import MEASURE_VERSION, lift_level, measure, normalize, read_wav_header
+from .meeting_audio import (
+    MEASURE_VERSION,
+    OVERLAP_SECONDS,
+    lift_level,
+    measure,
+    normalize,
+    read_wav_header,
+    split_chunks,
+)
 from .moss import transcribe_track
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
@@ -93,6 +101,8 @@ def process_session(session: Session, settings: Settings, options: Options) -> O
             [TRANSCRIPT_FILE],
             lambda: write_atomic(transcript_path, render_transcript(session, segments, options)),
         )
+        # The summary model needs the memory the transcription model is holding.
+        moss.release()
         write_summary(session, runner, settings, transcript_path, options, outcome)
     except Exception as exc:
         processing.update({"state": "failed", "outcome": "failed", "error": str(exc)})
@@ -186,6 +196,100 @@ def normalize_tracks(session: Session, tracks: list[dict[str, Any]]) -> dict[str
     return evidence
 
 
+# Two chunks describe the same audio in their overlap; labels are compared only
+# when their text matches at least this much.
+STITCH_MIN_RATIO = 0.5
+
+
+def stitch_speakers(
+    previous: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+    start: float,
+    end: float,
+) -> dict[str, str]:
+    """Maps this chunk's speaker labels to the previous chunk's, using the overlap.
+
+    Labels are local to a chunk, so the same voice arrives as [S01] in one window
+    and [S02] in the next. The shared audio is transcribed in both, and matching
+    text identifies which local label is the same person.
+    """
+
+    def window(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [s for s in items if s["end"] > start and s["start"] < end]
+
+    scores: dict[tuple[str, str], list[float]] = {}
+    for current in window(segments):
+        for earlier in window(previous):
+            if min(current["end"], earlier["end"]) <= max(current["start"], earlier["start"]):
+                continue
+            ratio = SequenceMatcher(None, current["text"], earlier["text"]).ratio()
+            scores.setdefault((current["speaker_raw"], earlier["speaker_raw"]), []).append(ratio)
+
+    mapping: dict[str, str] = {}
+    taken: set[str] = set()
+    ranked = sorted(scores.items(), key=lambda item: -max(item[1]))
+    for (local, earlier_label), ratios in ranked:
+        if max(ratios) < STITCH_MIN_RATIO or local in mapping or earlier_label in taken:
+            continue
+        mapping[local] = earlier_label
+        taken.add(earlier_label)
+    return mapping
+
+
+def transcribe_file(path: Path, settings: Settings, language: str) -> list[dict[str, Any]]:
+    """Transcribes one window with the configured engine."""
+    if settings.asr_engine == "torch":
+        return transcribe_track(path, settings)
+    if settings.asr_engine == "speech":
+        return speech_cli.transcribe(path, settings, language=language)
+    raise ValueError(f"Unknown ASR_ENGINE {settings.asr_engine!r}; use 'speech' or 'torch'.")
+
+
+def transcribe_chunked(
+    session: Session, name: str, audio: Path, settings: Settings, language: str
+) -> list[dict[str, Any]]:
+    """Transcribes a track window by window, reusing finished windows on rerun."""
+    chunks = split_chunks(audio, session.path("work"), name)
+    collected: list[dict[str, Any]] = []
+    previous: list[dict[str, Any]] = []
+    for chunk in chunks:
+        checkpoint = session.path(f"work/{name}-chunk-{chunk.index:02d}.json")
+        logger.info("Chunk %d of %d: %s", chunk.index + 1, len(chunks), audio.name)
+        if chunk.silent:
+            logger.info("Chunk %d has no speech; skipping transcription", chunk.index + 1)
+            write_atomic(checkpoint, [])
+            continue
+        if checkpoint.is_file():
+            segments = json.loads(checkpoint.read_text(encoding="utf-8"))
+            logger.info("Reusing chunk %d from %s", chunk.index + 1, checkpoint.name)
+        else:
+            raw = transcribe_file(chunk.path, settings, language)
+            segments = [
+                {
+                    **segment,
+                    "start": segment["start"] + chunk.start,
+                    "end": segment["end"] + chunk.start,
+                }
+                for segment in raw
+            ]
+            write_atomic(checkpoint, json.dumps(segments))
+        if chunk.index and previous:
+            mapping = stitch_speakers(
+                previous, segments, chunk.start, chunk.start + OVERLAP_SECONDS
+            )
+            if mapping:
+                logger.info("Chunk %d speaker mapping: %s", chunk.index + 1, mapping)
+            for segment in segments:
+                segment["speaker_raw"] = mapping.get(segment["speaker_raw"], segment["speaker_raw"])
+        # The last chunk owns everything to the end of the file; earlier chunks
+        # stop where the next chunk's overlap starts.
+        last = chunk.index == len(chunks) - 1
+        own_end = float("inf") if last else chunk.own_end
+        collected.extend(segment for segment in segments if segment["start"] < own_end)
+        previous = segments
+    return collected
+
+
 def transcribe_tracks(
     session: Session,
     runner: StageRunner,
@@ -196,13 +300,17 @@ def transcribe_tracks(
 ) -> list[dict[str, Any]]:
     def transcribe(name: str) -> list[dict[str, Any]]:
         audio = session.path(f"work/{name}-16k.wav")
-        segments = transcribe_track(audio, settings)
+        segments = transcribe_chunked(session, name, audio, settings, options.language)
         kept = [s for s in segments if s["text"].strip() and not is_hallucination(s["text"])]
         write_atomic(session.path(f"work/{name}-segments.json"), json.dumps(kept))
         return kept
 
     model_config = {
         "language": options.language,
+        # Part of the cache key: switching engines must not reuse another
+        # engine's transcript.
+        "stt_engine": settings.asr_engine,
+        "speech_model": settings.speech_model if settings.asr_engine == "speech" else None,
         "stt_model": settings.moss_model_id,
         "stt_revision": settings.moss_revision,
         "device": settings.moss_device,

@@ -117,8 +117,7 @@ def wait_until_ready(process: subprocess.Popen[bytes], base_url: str, log_path: 
     while time.monotonic() < deadline:
         if process.poll() is not None:
             logger.warning(
-                "Summary server exited during startup; see %s. "
-                "The transcript is still processed.",
+                "Summary server exited during startup; see %s. The transcript is still processed.",
                 log_path,
             )
             return
@@ -142,9 +141,7 @@ def stop_server(process: subprocess.Popen[bytes]) -> None:
 
 
 @contextmanager
-def run_server(
-    settings: Settings, session_dir: Path, wait_ready: bool = True
-) -> Iterator[None]:
+def run_server(settings: Settings, session_dir: Path, wait_ready: bool = True) -> Iterator[None]:
     """Starts llama-server for the session, stopping it on exit.
 
     Reuses a server that is already listening. With `wait_ready=False` the

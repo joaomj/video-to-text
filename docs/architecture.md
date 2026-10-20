@@ -20,7 +20,11 @@ meeting process (Python)
     FFmpeg: normalize each track to work/<name>-16k.wav (sources untouched)
     FFmpeg: lift quiet tracks to -1 dBFS peak, at most +24 dB
     |
-    Local MOSS transcription per track (timestamps plus speaker labels)
+    Split each track into 5-minute windows with 30 s overlap
+    Local MOSS transcription per window through the speech CLI (MLX)
+      frames, timestamps and speaker labels in one pass
+      windows without speech produce nothing and are logged
+      speaker labels stitched across the overlap
       mic track maps to "Me"
       system track labels [S01], [S02] map to "Remote N"
     |
@@ -38,7 +42,9 @@ meeting process (Python)
 |-----------|---------|
 | `recorder/` (Swift) | Capture plus health monitoring. Writes `mic.wav`, `system.wav`, `session.json`, `recording.log`. |
 | `meeting_audio.py` | Normalizes tracks to 16 kHz mono and measures signal evidence. |
-| `moss.py` | Local transcription. One 0.9B model returns segments with timestamps plus speaker labels in a single pass, logging token progress. Uses CUDA, then Apple GPU, then CPU; half precision on GPUs, float32 on CPU. |
+| `speech_cli.py` | Default transcription engine. Runs the `speech` CLI (MOSS through MLX) once per window and parses its report into segments. Keeps generation within a token budget derived from window length. |
+| `moss.py` | Fallback engine (`ASR_ENGINE=torch`). In-process MOSS on CUDA, Apple GPU, or CPU; half precision on GPUs, float32 on CPU. |
+| `resources.py` | Machine capacity check before transcription and summary. |
 | `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript and summary output. |
 | `summary.py` | Summary client for the local llama-server (Qwen3.5-9B). |
 | `local_llm.py` | Starts llama-server for the summary stage, stops it afterwards. |
@@ -60,13 +66,23 @@ skips a stage whose key and outputs still match, resumes interrupted work,
 and never duplicates final documents. A file lock prevents two processing
 runs on one session.
 
-## Why local MOSS
+## Why local MOSS through MLX
 
 Transcription runs on this machine. One model transcribes, timestamps, and
 separates speakers in a single local pass, so no audio leaves the Mac and
-there is no per-minute cost. The weights (~2 GB) download from Hugging Face
-on the first run and are reused after. The summary weights (~6 GB) download
-on the first server start the same way. Nothing leaves the Mac.
+there is no per-minute cost.
 
-For reuse in another project: copy `transcribe_diarize_app/moss.py` and add
-`torch` plus `moss-transcribe-diarize` (GitHub source) to dependencies.
+Measured on the reference Mac mini (M4, 16 GB) with a real 40-minute meeting:
+
+- Window-by-window MLX transcription: 6.4 minutes for the whole meeting, 1.3 GB peak.
+- Single-pass torch transcription: 58.5 minutes, about 10 GB, and swap.
+- A window with no speech: 7 to 17 seconds, then logged and skipped.
+
+MLX decodes greedily without a repetition guard, so a window full of noise
+makes it repeat timestamp markers until the token budget runs out. That is
+why windows yield "no words" rather than an error, and why the token budget
+scales with window length.
+
+The weights (~1 GB, int5) download from Hugging Face on the first run and are
+reused after. The summary weights (~6 GB) download on the first server start
+the same way. Nothing leaves the Mac.

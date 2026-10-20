@@ -95,7 +95,7 @@ def fake_transcribe(audio_wav: object, _settings: object) -> list[dict[str, obje
 def run_process(session: Session) -> tuple[object, int]:
     # The summary stage would start the real llama-server; the summary HTTP
     # call is faked instead, so the server must not be started here.
-    settings = Settings(summary_server_autostart=False)
+    settings = Settings(summary_server_autostart=False, asr_engine="torch")
     options = Options(language="en", meeting_type="generic", force=True)
     transcribe_target = "transcribe_diarize_app.meeting_pipeline.transcribe_track"
     with (

@@ -25,6 +25,21 @@ folder, capped at 512 KB.
 
 ## Transcription
 
+The default engine is the `speech` CLI, which runs MOSS through MLX. It is
+installed by `install.sh`; on an existing machine install it with
+`brew install speech`. The int5 weights (~1 GB) download on first use.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ASR_ENGINE` | `speech` | `speech` runs the CLI through MLX; `torch` runs the in-process model. |
+| `SPEECH_BIN` | — | Path to the `speech` binary (default: `speech` on PATH). |
+| `SPEECH_ENGINE` | `moss` | Engine passed to the CLI. |
+| `SPEECH_BACKEND` | `mlx` | CLI backend; `coreml` is the slower alternative. |
+| `SPEECH_MODEL` | `int5` | MOSS weights: `int5` or `int8`. |
+| `SPEECH_TIMEOUT_SECONDS` | `3600` | Per-window timeout. |
+
+The variables below apply only when `ASR_ENGINE=torch`.
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MOSS_MODEL_ID` | `OpenMOSS-Team/MOSS-Transcribe-Diarize` | Transcription model. |

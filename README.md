@@ -7,8 +7,9 @@ transcript with speaker labels and a separate meeting summary. No external
 recording app needed.
 
 Transcription and summary both run on this Mac: MOSS-Transcribe-Diarize
-for speech, Qwen3.5-9B through llama-server for the summary. Nothing
-leaves the Mac and there is no per-minute cost.
+through the MLX runtime for speech, Qwen3.5-9B through llama-server for the
+summary. Nothing leaves the Mac and there is no per-minute cost. A 40-minute
+meeting transcribes in about 6.5 minutes with 1.3 GB of memory per window.
 
 ## Requirements
 
@@ -20,11 +21,12 @@ Apple Silicon Mac, macOS 14.4+. Everything else is installed by the setup script
 ./install.sh
 ```
 
-`install.sh` does everything: installs UV, FFmpeg, and llama.cpp via
-Homebrew, builds the Swift recorder, installs the Python environment, and
-adds a `meet` alias to `~/.zshrc`. Model weights (transcription ~2 GB,
-summary ~6 GB) download automatically on first use and are reused after.
-Restart the terminal after setup (or run `source ~/.zshrc`).
+`install.sh` does everything: installs UV, FFmpeg, llama.cpp, and the
+`speech` transcription runtime via Homebrew, builds the Swift recorder,
+installs the Python environment, and adds a `meet` alias to `~/.zshrc`.
+Model weights (transcription ~1 GB, summary ~6 GB) download automatically on
+first use and are reused after. Restart the terminal after setup (or run
+`source ~/.zshrc`).
 
 ## Meeting workflow
 
@@ -62,6 +64,28 @@ uv run --project ~/projects/video-to-text meeting status ~/Meetings/2026-10-19_1
 uv run --project ~/projects/video-to-text meeting devices
 ```
 
+## Transcription
+
+Each track is cut into five-minute windows with 30 seconds of overlap and
+transcribed window by window, so memory stays flat no matter how long the
+meeting runs. Speaker labels are stitched across the overlap, so a label can
+shift between windows.
+
+Measured on a Mac mini (M4, 16 GB) with a real 40-minute meeting:
+
+| Transcription | Time | Peak memory |
+|---------------|------|-------------|
+| Single pass, whole track | 58.5 min | ~10 GB, swapping |
+| Five-minute windows | **6.4 min** | **1.3 GB** |
+
+The summary stage is separate: llama-server briefly takes about 8 GB and
+starts only for that stage.
+
+Default engine: the `speech` CLI (MOSS through MLX). Set `ASR_ENGINE=torch`
+to use the in-process MOSS model instead, which needs `torch` and about 2.5
+times the memory. Windows with no speech produce no output, which is
+expected and logged; a silent window never fails the run.
+
 ## Configuration
 
 The summary server runs on this Mac. Full variable reference:
@@ -74,6 +98,8 @@ The summary server runs on this Mac. Full variable reference:
 | `LLM_HF_REPO` | `unsloth/Qwen3.5-9B-GGUF:Q4_K_M` | Model the server loads on start |
 | `LLM_CTX_SIZE` | `32768` | Server context size in tokens |
 | `LLAMA_SERVER_BIN` | — | Server binary override (default: `llama-server` on PATH) |
+| `ASR_ENGINE` | `speech` | Transcription engine: `speech` (MLX) or `torch` |
+| `SPEECH_MODEL` | `int5` | MOSS weights for the `speech` runtime: `int5` or `int8` |
 
 ## Docs
 

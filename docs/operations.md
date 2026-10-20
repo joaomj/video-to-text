@@ -27,9 +27,11 @@ A run ends as one of:
 
 ## Machine capacity
 
-Processing is gated on what the machine can afford. Before transcription the
-command reads the kernel memory pressure, the reclaimable page count, and swap
-usage, then stops with a message when:
+Transcription needs about 1.3 GB per window with the default `speech` engine
+and about 2.5 GB with `ASR_ENGINE=torch`. Processing is gated on what the
+machine can afford. Before transcription the command reads the kernel memory
+pressure, the reclaimable page count, and swap usage, then stops with a
+message when:
 
 - memory pressure is `warning` or `critical`, or
 - less than 2.5 GB is reclaimable.
@@ -40,6 +42,13 @@ applications and re-run `meeting process <dir>` to generate only the summary.
 
 `--force` runs a stage regardless. CPU load is reported (above 1.5 per CPU at a
 terminal) but never blocks a stage.
+
+## Windows without speech
+
+A window with no speech yields no segments. The log records
+`no words in this window` with the model's stop reason, the window is
+checkpointed empty, and processing continues. A muted microphone track is
+therefore free and never fails a run.
 
 ## Recovery
 
