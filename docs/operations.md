@@ -71,4 +71,4 @@ transcript available and reports `incomplete`.
 | "Not starting transcription" / "Summary skipped" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
 | "Recorder not found" | `swift build -c release --package-path recorder`, or set `MEETREC_BIN`. |
 | First run is slow | Weights download once, then are reused: ~1 GB for the default `speech` engine, ~1.7 GB for `ASR_ENGINE=torch`, ~6 GB for the summary. |
-| Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per window and the pipeline stitches labels across overlaps, so one speaker can appear under two labels. Edit manually, or record with `ASR_ENGINE=torch` and a single pass. |
+| Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per window and the pipeline stitches labels across overlaps, so one speaker can appear under two labels. Edit the labels by hand in `transcript.md`. |
