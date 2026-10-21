@@ -245,7 +245,7 @@ def transcribe_chunked(
         logger.info("Chunk %d of %d: %s", chunk.index + 1, len(chunks), audio.name)
         if chunk.silent:
             logger.info("Chunk %d has no speech; skipping transcription", chunk.index + 1)
-            write_atomic(checkpoint, [])
+            write_atomic(checkpoint, "[]")
             continue
         if checkpoint.is_file():
             segments = json.loads(checkpoint.read_text(encoding="utf-8"))
