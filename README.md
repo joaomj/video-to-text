@@ -42,7 +42,7 @@ competes with transcription or summary weights for memory. Process the
 session when the machine is free:
 
 ```bash
-uv run --project ~/projects/video-to-text meeting process ~/Meetings/2026-10-19_153000
+meeting process ~/Meetings/2026-10-19_153000
 ```
 
 Output lands in `~/Meetings/<date>/`: `transcript.md` plus `summary.md`.
@@ -55,11 +55,11 @@ meet --language pt --name "planning"  # Portuguese session with a name
 meet --mic "External" --process       # transcribe as soon as you stop
 ```
 
-Inspect a session, or list microphones (these work from any folder):
+Inspect a session, or list microphones (all `meeting` commands work from any folder):
 
 ```bash
-uv run --project ~/projects/video-to-text meeting status ~/Meetings/2026-10-19_153000
-uv run --project ~/projects/video-to-text meeting devices
+meeting status ~/Meetings/2026-10-19_153000
+meeting devices
 ```
 
 English is the default language. Set `MEETING_LANGUAGE=pt` to change it.

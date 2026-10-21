@@ -37,7 +37,16 @@ echo "    Qwen3.5-9B (Q4_K_M, ~6 GB) downloads on first server start, then is re
 echo "    Start the summary server with:"
 echo "      llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'"
 
-echo "==> Checking the meet alias..."
+echo "==> Checking the meeting command and meet alias..."
+mkdir -p "$HOME/.local/bin"
+cat > "$HOME/.local/bin/meeting" << 'SHIM'
+#!/bin/sh
+# Meeting Recorder CLI shim: runs the `meeting` console script from the project venv.
+exec uv run --project "$HOME/projects/video-to-text" meeting "$@"
+SHIM
+chmod +x "$HOME/.local/bin/meeting"
+echo "    meeting command installed at ~/.local/bin/meeting"
+
 if grep -q "alias meet=" ~/.zshrc 2>/dev/null; then
   echo "    meet alias already present"
 else
