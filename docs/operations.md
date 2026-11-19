@@ -63,6 +63,7 @@ transcript available and reports `incomplete`.
 | "FFmpeg not found" | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux). |
 | "No OpenRouter key" | Set `OPENROUTER_API_KEY` or `OPENROUTER_API_KEY_REF` in `.env` ([configuration](configuration.md#openrouter-key)), then retry `meeting process <dir>`. |
 | "pass-cli could not read OPENROUTER_API_KEY_REF" | Run `pass-cli info`; log in if the session expired, and check the reference, then retry. |
+| "The summary hit max_tokens" | The model ran out of output tokens, so no partial summary was saved. Retry `meeting process <dir>`; if it repeats, try another `--summary-model`. |
 | "Summary request failed" | Check the network and the OpenRouter key and credit, then retry `meeting process <dir>`. |
 | "Not starting transcription" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
 | "Recorder not found" | `swift build -c release --package-path recorder`, or set `MEETREC_BIN`. |

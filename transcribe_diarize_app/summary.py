@@ -56,7 +56,7 @@ def summarize(transcript: str, settings: Settings, model: str | None = None) -> 
     payload: dict[str, object] = {
         "model": model or settings.summary_model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 1500,
+        "max_tokens": 8000,
     }
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -70,7 +70,12 @@ def summarize(transcript: str, settings: Settings, model: str | None = None) -> 
             if response.status_code in RETRYABLE_STATUS:
                 raise RetryableResponseError(f"HTTP {response.status_code}: {response.text[:300]}")
             response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
+            choice = response.json()["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise RuntimeError(
+                    f"The summary hit max_tokens ({payload['max_tokens']}) and was cut off."
+                )
+            content = choice["message"]["content"]
             if not content or not content.strip():
                 raise RuntimeError("The summary model returned an empty response.")
             return content.strip()

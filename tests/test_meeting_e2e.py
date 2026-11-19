@@ -96,14 +96,14 @@ def fake_transcribe(
     return [dict(segment) for segment in MIC_SEGMENTS]
 
 
-def run_process(session: Session) -> tuple[object, int]:
+def run_process(session: Session, respond: object = fake_post) -> tuple[object, int]:
     # The summary HTTP call is faked, so any key works.
     settings = Settings(openrouter_api_key="test-key")
     options = Options(language="en", meeting_type="generic", force=True)
     transcribe_target = "transcribe_diarize_app.meeting_pipeline.speech_cli.transcribe"
     with (
         patch(transcribe_target, side_effect=fake_transcribe),
-        patch("httpx.post", side_effect=fake_post) as post,
+        patch("httpx.post", side_effect=respond) as post,
     ):
         outcome = process_session(session, settings, options)
         return outcome, post.call_count
@@ -159,6 +159,19 @@ class MeetingEndToEndTests(unittest.TestCase):
 
             self.assertEqual(outcome.status, "complete")
             self.assertEqual(second_calls, 0)
+
+    def test_truncated_summary_is_not_saved(self) -> None:
+        def truncated_post(_url: str, **_: object) -> FakeResponse:
+            choice = {"message": {"content": "- Half a"}, "finish_reason": "length"}
+            return FakeResponse({"choices": [choice]})
+
+        with TemporaryDirectory() as tmp:
+            session = make_session(Path(tmp) / "meeting")
+            outcome, _ = run_process(session, respond=truncated_post)
+
+            self.assertEqual(outcome.status, "incomplete")
+            self.assertFalse((session.directory / "summary.md").exists())
+            self.assertTrue((session.directory / "transcript.md").exists())
 
 
 if __name__ == "__main__":
