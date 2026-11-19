@@ -97,9 +97,8 @@ def fake_transcribe(
 
 
 def run_process(session: Session) -> tuple[object, int]:
-    # The summary stage would start the real llama-server; the summary HTTP
-    # call is faked instead, so the server must not be started here.
-    settings = Settings(summary_server_autostart=False)
+    # The summary HTTP call is faked, so any key works.
+    settings = Settings(openrouter_api_key="test-key")
     options = Options(language="en", meeting_type="generic", force=True)
     transcribe_target = "transcribe_diarize_app.meeting_pipeline.speech_cli.transcribe"
     with (

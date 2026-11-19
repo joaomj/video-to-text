@@ -12,7 +12,6 @@ from transcribe_diarize_app.resources import (
     PRESSURE_CRITICAL,
     PRESSURE_NORMAL,
     PRESSURE_WARNING,
-    SUMMARY_HEADROOM_GB,
     TRANSCRIBE_HEADROOM_GB,
     Capacity,
     shortfall,
@@ -29,7 +28,6 @@ class CapacityPolicyTests(unittest.TestCase):
     def test_roomy_machine_allows_every_stage(self) -> None:
         idle = capacity()
         self.assertIsNone(shortfall(idle, TRANSCRIBE_HEADROOM_GB))
-        self.assertIsNone(shortfall(idle, SUMMARY_HEADROOM_GB))
 
     def test_pressure_wins_over_free_memory(self) -> None:
         pressured = capacity(pressure=PRESSURE_WARNING, headroom_gb=16.0)
@@ -38,13 +36,11 @@ class CapacityPolicyTests(unittest.TestCase):
         self.assertIsNotNone(shortfall(critical, TRANSCRIBE_HEADROOM_GB))
 
     def test_short_headroom_blocks_the_stage_that_needs_it(self) -> None:
-        tight = capacity(headroom_gb=4.0)
-        self.assertIsNone(shortfall(tight, TRANSCRIBE_HEADROOM_GB))
-        self.assertIsNotNone(shortfall(tight, SUMMARY_HEADROOM_GB))
+        self.assertIsNone(shortfall(capacity(headroom_gb=4.0), TRANSCRIBE_HEADROOM_GB))
+        self.assertIsNotNone(shortfall(capacity(headroom_gb=2.0), TRANSCRIBE_HEADROOM_GB))
 
     def test_thresholds_match_what_the_models_need(self) -> None:
         self.assertEqual(TRANSCRIBE_HEADROOM_GB, 2.5)
-        self.assertEqual(SUMMARY_HEADROOM_GB, 6.0)
 
 
 if __name__ == "__main__":

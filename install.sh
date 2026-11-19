@@ -4,12 +4,12 @@ set -euo pipefail
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-echo "==> Checking Homebrew packages (uv, ffmpeg, llama.cpp, speech)..."
+echo "==> Checking Homebrew packages (uv, ffmpeg, speech)..."
 if ! have brew; then
   echo "error: Homebrew is required: https://brew.sh" >&2
   exit 1
 fi
-for formula in uv ffmpeg llama.cpp speech; do
+for formula in uv ffmpeg speech; do
   if brew list "$formula" >/dev/null 2>&1; then
     echo "    $formula already installed"
   else
@@ -32,10 +32,8 @@ echo "    recorder: recorder/.build/release/meetrec"
 echo "==> Installing Python dependencies..."
 uv sync
 
-echo "==> Local summary model..."
-echo "    Qwen3.5-9B (Q4_K_M, ~6 GB) downloads on first server start, then is reused."
-echo "    Start the summary server with:"
-echo "      llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'"
+echo "==> Summary model..."
+echo "    Summaries use OpenRouter. Set OPENROUTER_API_KEY in .env or the environment."
 
 echo "==> Checking the meeting command and meet alias..."
 mkdir -p "$HOME/.local/bin"

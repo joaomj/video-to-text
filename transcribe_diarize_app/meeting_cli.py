@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--summary-model",
             default=os.environ.get("SUMMARY_MODEL"),
-            help="Summary model (default: SUMMARY_MODEL or Qwen3.5-9B)",
+            help="Summary model (default: SUMMARY_MODEL or deepseek/deepseek-v4.1-flash-1017)",
         )
         command.add_argument(
             "--force",

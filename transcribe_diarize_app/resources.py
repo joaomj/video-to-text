@@ -19,8 +19,6 @@ from dataclasses import dataclass
 # A transcription window peaks near 1.3 GB; below this the machine is already
 # short of memory before the model is loaded.
 TRANSCRIBE_HEADROOM_GB = 2.5
-# The 9B summary model is ~6 GB of weights plus its cache.
-SUMMARY_HEADROOM_GB = 6.0
 # Load average above this per CPU means the machine is already busy.
 BUSY_LOAD_PER_CPU = 1.5
 # Pressure levels reported by kern.memorystatus_vm_pressure_level.

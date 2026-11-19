@@ -13,7 +13,6 @@ Each run writes to `~/Meetings/<date>/` (or `--out`/`--name`):
 - `summary.md` — main points, decisions, action items with owners/deadlines,
   open questions.
 - `recording.log` / `processing.log` — persistent logs.
-- `llama-server.log` — summary server output, capped at 512 KB.
 
 ## Outcomes
 
@@ -35,10 +34,6 @@ message when:
 
 - memory pressure is `warning` or `critical`, or
 - less than 2.5 GB is reclaimable.
-
-The summary stage needs about 6 GB. When the machine is short, the summary is
-skipped, the session ends as `incomplete`, and the transcript is kept. Close
-applications and re-run `meeting process <dir>` to generate only the summary.
 
 `--force` runs a stage regardless. CPU load is reported (above 1.5 per CPU at a
 terminal) but never blocks a stage.
@@ -66,8 +61,10 @@ transcript available and reports `incomplete`.
 | Problem | Solution |
 |---------|----------|
 | "FFmpeg not found" | `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux). |
-| "Summary request failed" / connection refused | The summary stage starts the server itself; if it failed, start it manually: `llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080 --chat-template-kwargs '{"enable_thinking": false}'`, then retry `meeting process`. |
-| "Not starting transcription" / "Summary skipped" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
+| "No OpenRouter key" | Set `OPENROUTER_API_KEY` or `OPENROUTER_API_KEY_REF` in `.env` ([configuration](configuration.md#openrouter-key)), then retry `meeting process <dir>`. |
+| "pass-cli could not read OPENROUTER_API_KEY_REF" | Run `pass-cli info`; log in if the session expired, and check the reference, then retry. |
+| "Summary request failed" | Check the network and the OpenRouter key and credit, then retry `meeting process <dir>`. |
+| "Not starting transcription" | The machine is short of memory. Close applications, then retry; `--force` overrides the check. |
 | "Recorder not found" | `swift build -c release --package-path recorder`, or set `MEETREC_BIN`. |
-| First run is slow | Weights download once, then are reused: ~1 GB for transcription, ~6 GB for the summary. |
+| First run is slow | Transcription weights (~1 GB) download once, then are reused. |
 | Speakers labeled wrong | MOSS assigns `[S01]`, `[S02]` per window and the pipeline stitches labels across overlaps, so one speaker can appear under two labels. Edit the labels by hand in `transcript.md`. |

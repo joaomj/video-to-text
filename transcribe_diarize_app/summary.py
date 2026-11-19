@@ -1,9 +1,7 @@
-"""Meeting summary generation through a local OpenAI-compatible chat server.
+"""Meeting summary generation through OpenRouter's OpenAI-compatible chat API."""
 
-The default endpoint is llama-server on this Mac serving Qwen3.5-9B.
-Start it with: llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080
-"""
-
+import os
+import subprocess
 import time
 
 import httpx
@@ -21,8 +19,39 @@ class RetryableResponseError(RuntimeError):
     pass
 
 
+def api_key(settings: Settings) -> str:
+    """Returns the OpenRouter key from the environment or from Proton Pass."""
+    if settings.openrouter_api_key:
+        return settings.openrouter_api_key
+    ref = settings.openrouter_api_key_ref
+    if not ref:
+        raise RuntimeError(
+            "No OpenRouter key: set OPENROUTER_API_KEY, or OPENROUTER_API_KEY_REF "
+            "to a Proton Pass reference, in .env."
+        )
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["pass-cli", "item", "view", ref],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={**os.environ, "PROTON_PASS_AGENT_REASON": "video-to-text meeting summary"},
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"Could not run pass-cli for OPENROUTER_API_KEY_REF: {exc}") from exc
+    key = result.stdout.strip()
+    if result.returncode != 0 or not key:
+        raise RuntimeError(
+            f"pass-cli could not read OPENROUTER_API_KEY_REF (exit {result.returncode}): "
+            f"{result.stderr.strip()[:300]}. Check `pass-cli info` and the reference."
+        )
+    return key
+
+
 def summarize(transcript: str, settings: Settings, model: str | None = None) -> str:
     """Returns the summary markdown. Retries transient failures and raises the final error."""
+    key = api_key(settings)
     prompt = MEETING_SUMMARY_PROMPT.replace("{transcript}", transcript)
     payload: dict[str, object] = {
         "model": model or settings.summary_model,
@@ -35,6 +64,7 @@ def summarize(transcript: str, settings: Settings, model: str | None = None) -> 
             response = httpx.post(
                 f"{settings.llm_base_url.rstrip('/')}/chat/completions",
                 json=payload,
+                headers={"Authorization": f"Bearer {key}"},
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
             if response.status_code in RETRYABLE_STATUS:

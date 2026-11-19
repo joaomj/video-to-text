@@ -2,8 +2,8 @@
 
 A Swift recorder captures microphone and system audio on macOS. A Python
 pipeline transcribes both tracks locally with MOSS-Transcribe-Diarize,
-merges them into one transcript, and writes a meeting summary through a
-local chat model (Qwen3.5-9B via llama-server).
+merges them into one transcript, and writes a meeting summary through
+OpenRouter (DeepSeek V4.1 Flash).
 
 ## Data flow
 
@@ -32,8 +32,7 @@ meeting process (Python)
     |
     Merge by timestamp to transcript.md
     |
-    Local chat completions summary to summary.md
-      llama-server starts for this stage and stops after it
+    OpenRouter chat completions summary to summary.md
 ```
 
 ## Components
@@ -43,10 +42,9 @@ meeting process (Python)
 | `recorder/` (Swift) | Capture plus health monitoring. Writes `mic.wav`, `system.wav`, `session.json`, `recording.log`. |
 | `meeting_audio.py` | Normalizes tracks to 16 kHz mono and measures signal evidence. |
 | `speech_cli.py` | Transcription engine. Runs the `speech` CLI (MOSS through MLX) once per window and parses its report into segments. Keeps generation within a token budget derived from window length. |
-| `resources.py` | Machine capacity check before transcription and summary. |
+| `resources.py` | Machine capacity check before transcription. |
 | `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript and summary output. |
-| `summary.py` | Summary client for the local llama-server (Qwen3.5-9B). |
-| `local_llm.py` | Starts llama-server for the summary stage, stops it afterwards. |
+| `summary.py` | Summary client for OpenRouter. |
 | `session.py` | Manifest, stage keys, atomic writes, process lock. |
 | `hallucinations.py` | Noise-segment filter. Uncertain speech is marked `[inaudible]`, never invented. |
 

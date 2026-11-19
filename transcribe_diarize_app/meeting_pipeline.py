@@ -7,16 +7,14 @@ from completed work and a repeated run does not duplicate final documents.
 
 import json
 from collections.abc import Callable
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from . import resources, speech_cli
+from . import speech_cli
 from .constants import MEETING_PROMPTS, SUPPORTED_LANGUAGES
 from .hallucinations import is_hallucination
-from .local_llm import run_server
 from .logging_utils import format_timestamp, logger
 from .meeting_audio import (
     MEASURE_VERSION,
@@ -42,10 +40,6 @@ SPARSE_WORDS_PER_ACTIVE_MINUTE = 30
 MIN_ACTIVE_SECONDS_FOR_SPARSE_CHECK = 30
 MIN_ACTIVE_SECONDS_TOTAL = 5
 
-LOCAL_SERVER_CMD = (
-    "llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M "
-    "--port 8080 --chat-template-kwargs '{\"enable_thinking\": false}'"
-)
 TRANSCRIPT_FILE = "transcript.md"
 SUMMARY_FILE = "summary.md"
 
@@ -417,40 +411,17 @@ def write_summary(
     summary_path = session.path(SUMMARY_FILE)
     summary_model = options.summary_model or settings.summary_model
 
-    capacity = resources.measure()
-    reason = resources.shortfall(capacity, resources.SUMMARY_HEADROOM_GB)
-    if reason and not options.force:
-        outcome.status = "incomplete"
-        outcome.reasons.append(
-            f"Summary skipped: {reason}. Close applications, then run "
-            f"`meeting process {session.directory}` to generate only the summary. "
-            "The transcript is saved."
-        )
-        logger.warning("Summary skipped: %s (%s)", reason, capacity.describe())
-        return
-    logger.info("Summary capacity: %s", capacity.describe())
-
     def generate() -> None:
         body = summarize(transcript.read_text(encoding="utf-8"), settings, summary_model)
         write_atomic(summary_path, f"# Meeting Summary: {session.id}\n\n{body}\n")
 
-    # The summary model is the only stage that needs the LLM server. Loading it
-    # here, and unloading it on exit, keeps capture and transcription free of a
-    # multi-gigabyte resident model.
-    server = (
-        run_server(settings, session.directory)
-        if settings.summary_server_autostart
-        else nullcontext()
-    )
     try:
-        with server:
-            runner.run("summary", [transcript], {"model": summary_model}, [SUMMARY_FILE], generate)
+        runner.run("summary", [transcript], {"model": summary_model}, [SUMMARY_FILE], generate)
     except RuntimeError as exc:
         reason = str(exc)
         outcome.status = "incomplete"
         outcome.reasons.append(
-            f"Summary not generated: {reason} Start the local summary server "
-            f"({LOCAL_SERVER_CMD}), then retry with "
+            f"Summary not generated: {reason} Fix the cause, then retry with "
             f"`meeting process {session.directory}`. The transcript is saved."
         )
         logger.error("Summary not generated: %s", reason)

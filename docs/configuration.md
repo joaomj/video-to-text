@@ -5,23 +5,27 @@ All settings are environment variables (or a git-ignored `.env` file) via
 
 ## Summary
 
-The summary runs on this Mac through llama-server. The server starts for the
-summary stage and stops when that stage ends, so no weights stay resident
-during capture or transcription. A server that is already listening is
-reused and left running.
+The summary is generated through OpenRouter, so the transcript text is sent
+to OpenRouter. The default model is pinned to a dated release
+(`deepseek/deepseek-v4.1-flash-1017`) so summaries do not change when an
+alias moves. Without `OPENROUTER_API_KEY` the session ends as `incomplete`
+and the transcript is kept.
 
-The Q4_K_M weights (~6 GB) download from Hugging Face on the first start
-and are reused after. The server log is `llama-server.log` in the session
-folder, capped at 512 KB.
+### OpenRouter key
+
+Set one of these in the git-ignored `.env`:
+
+- `OPENROUTER_API_KEY=<key>`, or
+- `OPENROUTER_API_KEY_REF=pass://<vault>/<item>/<field>`, a Proton Pass
+  reference. The summary stage reads it with `pass-cli item view`, so the key
+  is never stored on disk. `pass-cli` must be logged in (`pass-cli info`).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SUMMARY_MODEL` | `Qwen3.5-9B` | Summary model served by llama-server. |
-| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Local summary server endpoint. |
-| `LLM_HF_REPO` | `unsloth/Qwen3.5-9B-GGUF:Q4_K_M` | Model the server loads on start. |
-| `LLM_CTX_SIZE` | `32768` | Server context size in tokens. |
-| `LLAMA_SERVER_BIN` | — | Server binary override (default: `llama-server` on PATH). |
-| `SUMMARY_SERVER_AUTOSTART` | `true` | Start and stop the server around the summary stage. Set `false` when you keep your own server running on `LLM_BASE_URL`. |
+| `OPENROUTER_API_KEY` | — | OpenRouter key for the summary. |
+| `OPENROUTER_API_KEY_REF` | — | Proton Pass reference for the key, used when `OPENROUTER_API_KEY` is unset. |
+| `SUMMARY_MODEL` | `deepseek/deepseek-v4.1-flash-1017` | OpenRouter model ID. `~deepseek/deepseek-flash-latest` follows the newest Flash release. |
+| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-compatible summary endpoint. |
 
 ## Transcription
 
