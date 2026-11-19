@@ -1,6 +1,7 @@
 # Configuration
 
-All settings are environment variables (or a git-ignored `.env` file) via
+All settings are environment variables (or the git-ignored `.env` in the
+project root, read from any working directory) via
 `pydantic-settings`. See `.env.example` for a template.
 
 ## Summary

@@ -1,6 +1,6 @@
 """Machine capacity before heavy stages.
 
-Transcription and summarization each need several gigabytes. On a 16 GB Mac
+Transcription needs several gigabytes. On a 16 GB Mac
 the difference between a finished job and a swap storm is what else is running
 at the time, so the pipeline asks the operating system first and refuses to
 start work the machine cannot afford.

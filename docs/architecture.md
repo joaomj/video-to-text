@@ -84,5 +84,5 @@ why windows yield "no words" rather than an error, and why the token budget
 scales with window length.
 
 The weights (~1 GB, int5) download from Hugging Face on the first run and are
-reused after. The summary weights (~6 GB) download on the first server start
-the same way. Nothing leaves the Mac.
+reused after. Audio never leaves the Mac; only the transcript text goes to
+OpenRouter for the summary.
