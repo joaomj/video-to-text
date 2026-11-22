@@ -104,7 +104,6 @@ Transcription settings. Full variable reference:
 - [docs/operations.md](docs/operations.md) — session files, outcomes, recovery, troubleshooting.
 - [docs/configuration.md](docs/configuration.md) — full environment reference.
 - [docs/development.md](docs/development.md) — checks, CI, releases.
-- [docs/meeting-workflow-requirements.md](docs/meeting-workflow-requirements.md) — product requirements.
 
 ## License
 
