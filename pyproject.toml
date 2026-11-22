@@ -5,10 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "meeting-recorder"
 version = "0.8.0"
-description = "Record meetings (microphone plus system audio) and transcribe them with OpenRouter"
+description = "Record meetings (microphone plus system audio) and transcribe them locally"
 requires-python = ">=3.11"
 dependencies = [
-    "httpx>=0.27",
     "numpy>=1.26",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.0",

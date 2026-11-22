@@ -1,9 +1,8 @@
 # Architecture
 
 A Swift recorder captures microphone and system audio on macOS. A Python
-pipeline transcribes both tracks locally with MOSS-Transcribe-Diarize,
-merges them into one transcript, and writes a meeting summary through
-OpenRouter (DeepSeek V4.1 Flash).
+pipeline transcribes both tracks locally with MOSS-Transcribe-Diarize and
+merges them into one transcript.
 
 ## Data flow
 
@@ -31,8 +30,6 @@ meeting process (Python)
     Drop mic segments that echo remote speech
     |
     Merge by timestamp to transcript.md
-    |
-    OpenRouter chat completions summary to summary.md
 ```
 
 ## Components
@@ -43,8 +40,7 @@ meeting process (Python)
 | `meeting_audio.py` | Normalizes tracks to 16 kHz mono and measures signal evidence. |
 | `speech_cli.py` | Transcription engine. Runs the `speech` CLI (MOSS through MLX) once per window and parses its report into segments. Keeps generation within a token budget derived from window length. |
 | `resources.py` | Machine capacity check before transcription. |
-| `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript and summary output. |
-| `summary.py` | Summary client for OpenRouter. |
+| `meeting_pipeline.py` | Stage state, echo filtering, merging, completeness checks, transcript output. |
 | `session.py` | Manifest, stage keys, atomic writes, process lock. |
 | `hallucinations.py` | Noise-segment filter. Uncertain speech is marked `[inaudible]`, never invented. |
 
@@ -84,5 +80,4 @@ why windows yield "no words" rather than an error, and why the token budget
 scales with window length.
 
 The weights (~1 GB, int5) download from Hugging Face on the first run and are
-reused after. Audio never leaves the Mac; only the transcript text goes to
-OpenRouter for the summary.
+reused after. Audio and transcripts never leave the Mac.

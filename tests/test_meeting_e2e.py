@@ -1,11 +1,11 @@
-"""End-to-end proof for `meeting process` with the model and network faked.
+"""End-to-end proof for `meeting process` with the model faked.
 
 Why this test exists: it is the only automated proof that the stages connect —
-normalize, transcribe both tracks, merge speaker labels, write the transcript
-and summary, report the outcome, and resume completed stages. Unit tests on the
+normalize, transcribe both tracks, merge speaker labels, write the transcript,
+report the outcome, and resume completed stages. Unit tests on the
 helpers cannot catch wiring or stage-key mistakes. The local MOSS model is
 faked at the speech CLI boundary (running the model per test would be
-absurd); the summary HTTP call is faked at the httpx boundary. No GPU needed.
+absurd). No GPU needed.
 """
 
 import json
@@ -29,7 +29,6 @@ SYSTEM_SEGMENTS = [
     {"start": 2.0, "end": 3.0, "text": "Let us ship on Friday", "speaker_raw": "S02"},
 ]
 MIC_SEGMENTS = [{"start": 0.0, "end": 1.0, "text": "I agree with Friday", "speaker_raw": "S01"}]
-SUMMARY_BODY = "## Main points\n- The team agreed to ship on Friday."
 
 
 def write_tone(path: Path) -> None:
@@ -66,25 +65,6 @@ def make_session(directory: Path) -> Session:
     return Session(directory)
 
 
-class FakeResponse:
-    def __init__(self, payload: dict) -> None:
-        self._payload = payload
-        self.status_code = 200
-        self.text = ""
-
-    def raise_for_status(self) -> None:
-        pass
-
-    def json(self) -> dict:
-        return self._payload
-
-
-def fake_post(url: str, **_: object) -> FakeResponse:
-    if url.endswith("/chat/completions"):
-        return FakeResponse({"choices": [{"message": {"content": SUMMARY_BODY}}]})
-    raise AssertionError(f"Unexpected URL: {url}")
-
-
 def fake_transcribe(
     audio_wav: object,
     _settings: object,
@@ -96,17 +76,12 @@ def fake_transcribe(
     return [dict(segment) for segment in MIC_SEGMENTS]
 
 
-def run_process(session: Session, respond: object = fake_post) -> tuple[object, int]:
-    # The summary HTTP call is faked, so any key works.
-    settings = Settings(openrouter_api_key="test-key")
+def run_process(session: Session) -> tuple[object, int]:
     options = Options(language="en", meeting_type="generic", force=True)
     transcribe_target = "transcribe_diarize_app.meeting_pipeline.speech_cli.transcribe"
-    with (
-        patch(transcribe_target, side_effect=fake_transcribe),
-        patch("httpx.post", side_effect=respond) as post,
-    ):
-        outcome = process_session(session, settings, options)
-        return outcome, post.call_count
+    with patch(transcribe_target, side_effect=fake_transcribe) as transcribe:
+        outcome = process_session(session, Settings(), options)
+        return outcome, transcribe.call_count
 
 
 class LoudBackgroundTests(unittest.TestCase):
@@ -133,7 +108,7 @@ class LoudBackgroundTests(unittest.TestCase):
 
 
 class MeetingEndToEndTests(unittest.TestCase):
-    def test_process_produces_transcript_and_summary(self) -> None:
+    def test_process_produces_transcript(self) -> None:
         with TemporaryDirectory() as tmp:
             session = make_session(Path(tmp) / "meeting")
             outcome, _ = run_process(session)
@@ -144,8 +119,6 @@ class MeetingEndToEndTests(unittest.TestCase):
             self.assertIn("Remote 2", transcript)
             self.assertIn("Me", transcript)
             self.assertIn("Good morning everyone", transcript)
-            summary = (session.directory / "summary.md").read_text(encoding="utf-8")
-            self.assertIn("ship on Friday", summary)
             self.assertEqual(Session(session.directory).data["state"], "complete")
 
     def test_rerun_reuses_completed_stages(self) -> None:
@@ -159,19 +132,6 @@ class MeetingEndToEndTests(unittest.TestCase):
 
             self.assertEqual(outcome.status, "complete")
             self.assertEqual(second_calls, 0)
-
-    def test_truncated_summary_is_not_saved(self) -> None:
-        def truncated_post(_url: str, **_: object) -> FakeResponse:
-            choice = {"message": {"content": "- Half a"}, "finish_reason": "length"}
-            return FakeResponse({"choices": [choice]})
-
-        with TemporaryDirectory() as tmp:
-            session = make_session(Path(tmp) / "meeting")
-            outcome, _ = run_process(session, respond=truncated_post)
-
-            self.assertEqual(outcome.status, "incomplete")
-            self.assertFalse((session.directory / "summary.md").exists())
-            self.assertTrue((session.directory / "transcript.md").exists())
 
 
 if __name__ == "__main__":

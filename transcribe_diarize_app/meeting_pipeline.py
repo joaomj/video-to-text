@@ -27,7 +27,6 @@ from .meeting_audio import (
 )
 from .session import Session, now_iso, stage_key, write_atomic
 from .settings import Settings
-from .summary import summarize
 
 ME = "Me"
 REMOTE = "Remote"
@@ -41,7 +40,6 @@ MIN_ACTIVE_SECONDS_FOR_SPARSE_CHECK = 30
 MIN_ACTIVE_SECONDS_TOTAL = 5
 
 TRANSCRIPT_FILE = "transcript.md"
-SUMMARY_FILE = "summary.md"
 
 
 @dataclass
@@ -60,7 +58,6 @@ class Outcome:
 class Options:
     language: str
     meeting_type: str
-    summary_model: str | None = None
     force: bool = False
 
 
@@ -94,7 +91,6 @@ def process_session(session: Session, settings: Settings, options: Options) -> O
             [TRANSCRIPT_FILE],
             lambda: write_atomic(transcript_path, render_transcript(session, segments, options)),
         )
-        write_summary(session, runner, settings, transcript_path, options, outcome)
     except Exception as exc:
         processing.update({"state": "failed", "outcome": "failed", "error": str(exc)})
         processing["finished_at"] = now_iso()
@@ -398,30 +394,3 @@ def render_transcript(session: Session, segments: list[dict[str, Any]], options:
         else:
             lines[-1] += f" {segment['text']}"
     return "\n".join(lines).strip() + "\n"
-
-
-def write_summary(
-    session: Session,
-    runner: StageRunner,
-    settings: Settings,
-    transcript: Path,
-    options: Options,
-    outcome: Outcome,
-) -> None:
-    summary_path = session.path(SUMMARY_FILE)
-    summary_model = options.summary_model or settings.summary_model
-
-    def generate() -> None:
-        body = summarize(transcript.read_text(encoding="utf-8"), settings, summary_model)
-        write_atomic(summary_path, f"# Meeting Summary: {session.id}\n\n{body}\n")
-
-    try:
-        runner.run("summary", [transcript], {"model": summary_model}, [SUMMARY_FILE], generate)
-    except RuntimeError as exc:
-        reason = str(exc)
-        outcome.status = "incomplete"
-        outcome.reasons.append(
-            f"Summary not generated: {reason} Fix the cause, then retry with "
-            f"`meeting process {session.directory}`. The transcript is saved."
-        )
-        logger.error("Summary not generated: %s", reason)

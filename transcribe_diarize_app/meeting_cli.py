@@ -1,4 +1,4 @@
-"""`meeting` command: record a meeting, then transcribe and summarize it."""
+"""`meeting` command: record a meeting, then transcribe it."""
 
 import argparse
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 from . import resources
 from .constants import SUPPORTED_LANGUAGES
 from .logging_utils import add_file_log, logger
-from .meeting_pipeline import SUMMARY_FILE, TRANSCRIPT_FILE, Options, Outcome, process_session
+from .meeting_pipeline import TRANSCRIPT_FILE, Options, Outcome, process_session
 from .session import Session, SessionError, processing_lock
 from .settings import Settings
 
@@ -21,13 +21,13 @@ DEFAULT_ROOT = Path.home() / "Meetings"
 REPO_RECORDER = (
     Path(__file__).resolve().parent.parent / "recorder" / ".build" / "release" / "meetrec"
 )
-EXIT_CODES = {"complete": 0, "degraded": 3, "incomplete": 4}
+EXIT_CODES = {"complete": 0, "degraded": 3}
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="meeting",
-        description="Record a meeting (mic and system audio), then transcribe and summarize it.",
+        description="Record a meeting (mic and system audio), then transcribe it.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -40,11 +40,6 @@ def build_parser() -> argparse.ArgumentParser:
             help="Spoken language (default: MEETING_LANGUAGE or en)",
         )
         command.add_argument("--type", "-t", choices=["generic", "interview"], default="generic")
-        command.add_argument(
-            "--summary-model",
-            default=os.environ.get("SUMMARY_MODEL"),
-            help="Summary model (default: SUMMARY_MODEL or deepseek/deepseek-v4.1-flash-1017)",
-        )
         command.add_argument(
             "--force",
             action="store_true",
@@ -156,7 +151,7 @@ def process(directory: Path, args: argparse.Namespace) -> int:
             outcome = process_session(
                 session,
                 settings,
-                Options(args.language, args.type, args.summary_model, force=args.force),
+                Options(args.language, args.type, force=args.force),
             )
     except SessionError:
         raise
@@ -177,10 +172,9 @@ def report(session: Session, outcome: Outcome) -> None:
     print(f"\nMeeting processing {outcome.status.upper()}")
     for reason in outcome.reasons:
         print(f"  - {reason}")
-    for label, name in (("Transcript", TRANSCRIPT_FILE), ("Summary", SUMMARY_FILE)):
-        path = session.path(name)
-        if path.is_file():
-            print(f"  {label}: {path}")
+    path = session.path(TRANSCRIPT_FILE)
+    if path.is_file():
+        print(f"  Transcript: {path}")
     print(f"  Logs: {session.path('recording.log')}, {session.path('processing.log')}")
 
 

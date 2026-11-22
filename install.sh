@@ -32,9 +32,6 @@ echo "    recorder: recorder/.build/release/meetrec"
 echo "==> Installing Python dependencies..."
 uv sync
 
-echo "==> Summary model..."
-echo "    Summaries use OpenRouter. Set OPENROUTER_API_KEY in .env or the environment."
-
 echo "==> Checking the meeting command and meet alias..."
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/meeting" << 'SHIM'
@@ -58,4 +55,4 @@ ALIAS
 fi
 
 echo ""
-echo "Done. Record with: meet   (Ctrl-C stops, processing starts; the summary server starts and stops automatically)"
+echo "Done. Record with: meet   (Ctrl-C stops, processing starts)"
